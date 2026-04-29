@@ -1,0 +1,46 @@
+{
+  "name": "kiro-cli-hive",
+  "version": "0.1.0",
+  "description": "kiro-cli-hive — tmux-based multi-agent orchestration for kiro-cli",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Shawn-Kim96/oh-my-kiro-cli.git"
+  },
+  "homepage": "https://github.com/Shawn-Kim96/oh-my-kiro-cli",
+  "keywords": [
+    "kiro",
+    "kiro-cli",
+    "multi-agent",
+    "tmux",
+    "orchestration",
+    "ai"
+  ],
+  "bin": {
+    "kh": "./bin/kh.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "node --test dist/__tests__/*.test.js"
+  },
+  "dependencies": {
+    "commander": "13.1.0",
+    "@modelcontextprotocol/sdk": "1.12.1"
+  },
+  "devDependencies": {
+    "typescript": "5.7.0",
+    "@types/node": "22.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "!dist/__tests__/",
+    "src/prompts/",
+    "skills/"
+  ]
+}
