@@ -1,4 +1,4 @@
-const AGENT_MAP: Record<string, string> = {
+const INTERNAL_AGENT_MAP: Record<string, string> = {
   executor: 'yolo-general',
   explorer: 'yolo-explorer',
   planner: 'yolo-planner',
@@ -23,8 +23,30 @@ const AGENT_MAP: Record<string, string> = {
   default: 'yolo-general',
 };
 
+const PUBLIC_AGENT_MAP: Record<string, string> = {
+  planner: 'kiro_planner',
+  'information-architect': 'kiro_planner',
+  'product-manager': 'kiro_planner',
+  default: 'kiro_default',
+};
+
+function envKeyForRole(agentType: string): string {
+  return `KCH_AGENT_${agentType.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}`;
+}
+
+function activeAgentMap(): Record<string, string> {
+  const profile = (process.env['KCH_AGENT_PROFILE'] ?? 'internal').trim().toLowerCase();
+  if (profile === 'public' || profile === 'kiro') return PUBLIC_AGENT_MAP;
+  return INTERNAL_AGENT_MAP;
+}
+
 export function resolveAgent(agentType: string): string {
-  return AGENT_MAP[agentType] ?? AGENT_MAP['default']!;
+  const roleOverride = process.env[envKeyForRole(agentType)]?.trim();
+  if (roleOverride) return roleOverride;
+
+  const defaultOverride = process.env['KCH_DEFAULT_AGENT']?.trim();
+  const map = activeAgentMap();
+  return map[agentType] ?? defaultOverride ?? map['default']!;
 }
 
 export function parseSpec(spec: string | undefined): { workerCount: number; agentType: string } {

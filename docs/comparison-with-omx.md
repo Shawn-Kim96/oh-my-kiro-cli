@@ -68,7 +68,7 @@ kiro-cli-hive (kch) is directly inspired by [oh-my-codex](https://github.com/Yea
 
 **omx** uses role prompts and a skills system with productized behaviors.
 
-**kch** maps roles to kiro-cli agents (e.g., `executor` → `yolo-general`, `explorer` → `yolo-explorer`). Each kiro-cli agent already has its own specialized behavior, so kch leverages the existing agent system rather than adding another prompt layer.
+**kch** maps roles to kiro-cli agents (e.g., `executor` → `yolo-general`, `explorer` → `yolo-explorer`) for Amazon-internal use. Stock/public Kiro CLI can run the same orchestration with `KCH_AGENT_PROFILE=public`, which maps most roles to `kiro_default` and planner-oriented roles to `kiro_planner`. Each kiro-cli agent already has its own specialized behavior, so kch leverages the existing agent system rather than adding another prompt layer.
 
 ## What kch Borrows from omx
 

@@ -67,7 +67,7 @@ kiro-cli's built-in `use_subagent` is great for simple, single-turn queries. But
 
 - **Node.js** >= 20
 - **tmux** >= 3.0
-- **kiro-cli** installed and configured
+- **kiro-cli** installed and configured. The official macOS/Linux installer places shims in `~/.local/bin`; `kch` will use that path automatically when `kiro-cli` is not already on `PATH`.
 
 ## Installation
 
@@ -231,6 +231,11 @@ Check that all prerequisites are installed and accessible.
 
 | Variable | Description | Default |
 |---|---|---|
+| `KCH_KIRO_CLI` | Absolute path to the Kiro CLI binary or internal wrapper | `kiro-cli`, then `~/.local/bin/kiro-cli` |
+| `KIRO_CLI` | Compatibility override for the Kiro CLI binary | `KCH_KIRO_CLI` |
+| `KCH_AGENT_PROFILE` | Agent mapping profile: `internal` for Amazon yolo agents, `public` for stock Kiro agents | `internal` |
+| `KCH_DEFAULT_AGENT` | Fallback agent when a role does not have a profile mapping | profile default |
+| `KCH_AGENT_<ROLE>` | Override one role mapping, e.g. `KCH_AGENT_EXECUTOR=kiro_default` | profile mapping |
 | `KT_DEFAULT_MODEL` | Default model for all workers | kiro-cli default |
 | `KT_WORKER_MODEL` | Override model specifically for workers | `KT_DEFAULT_MODEL` |
 | `KT_REASONING_EFFORT` | Reasoning effort: `low`, `medium`, `high` | kiro-cli default |
@@ -245,7 +250,7 @@ KT_WORKER_MODEL=claude-sonnet KT_REASONING_EFFORT=low kch team 3:executor "Quick
 
 ## Worker Roles
 
-Each role maps to a kiro-cli agent with specialized capabilities:
+Each role maps to a kiro-cli agent with specialized capabilities. The default profile targets internal Amazon yolo agents. For stock/public Kiro CLI, run with `KCH_AGENT_PROFILE=public`; executor/reviewer/debugger/etc. use `kiro_default`, while planner-oriented roles use `kiro_planner`.
 
 | Role | Agent | Best For |
 |---|---|---|

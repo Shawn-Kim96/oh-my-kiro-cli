@@ -104,6 +104,20 @@ describe('parseSpec', () => {
 // ── resolveAgent ──
 
 describe('resolveAgent', () => {
+  const original = {
+    KCH_AGENT_PROFILE: process.env['KCH_AGENT_PROFILE'],
+    KCH_DEFAULT_AGENT: process.env['KCH_DEFAULT_AGENT'],
+    KCH_AGENT_EXECUTOR: process.env['KCH_AGENT_EXECUTOR'],
+  };
+
+  function restoreAgentEnv(): void {
+    for (const key of Object.keys(original) as Array<keyof typeof original>) {
+      const value = original[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+
   it('maps executor to yolo-general', () => {
     assert.equal(resolveAgent('executor'), 'yolo-general');
   });
@@ -118,6 +132,21 @@ describe('resolveAgent', () => {
 
   it('falls back to yolo-general for unknown role', () => {
     assert.equal(resolveAgent('nonexistent-role'), 'yolo-general');
+  });
+
+  it('supports stock Kiro CLI agents with the public profile', () => {
+    process.env['KCH_AGENT_PROFILE'] = 'public';
+    assert.equal(resolveAgent('executor'), 'kiro_default');
+    assert.equal(resolveAgent('planner'), 'kiro_planner');
+    restoreAgentEnv();
+  });
+
+  it('allows role-specific agent overrides', () => {
+    process.env['KCH_AGENT_EXECUTOR'] = 'custom_executor';
+    process.env['KCH_DEFAULT_AGENT'] = 'custom_default';
+    assert.equal(resolveAgent('executor'), 'custom_executor');
+    assert.equal(resolveAgent('nonexistent-role'), 'custom_default');
+    restoreAgentEnv();
   });
 });
 
@@ -235,8 +264,9 @@ import { assessOutput } from '../team/quality-gate.js';
 import { staleLockThreshold, withFileLock } from '../team/state/locks.js';
 import { inferPhaseFromTaskCounts } from '../team/phase-controller.js';
 import { tmpdir } from 'os';
-import { mkdtemp, rm } from 'fs/promises';
+import { chmod, mkdtemp, rm, writeFile } from 'fs/promises';
 import { kchStateDir, ktStateDir } from '../utils/paths.js';
+import { resolveKiroCliCommand } from '../utils/kiro-cli.js';
 import type { TeamConfig } from '../team/contracts.js';
 import {
   initTeamState, createTask, readTask, claimTask, transitionTaskStatus,
@@ -246,6 +276,7 @@ import { handleApiOperation } from '../team/api-interop.js';
 import { generateWorkerInbox } from '../team/worker-bootstrap.js';
 import { latestTeamName } from '../cli/team-select.js';
 import { findCleanupCandidates } from '../cli/cleanup.js';
+import { paneLooksReady } from '../team/tmux-session.js';
 
 // ── Quality Gate ──
 
@@ -333,6 +364,72 @@ describe('kch state root resolution', () => {
     delete process.env['KT_STATE_ROOT'];
     assert.equal(kchStateDir(), '/tmp/kh-legacy');
     restoreEnv();
+  });
+});
+
+// ── Kiro CLI command resolution ──
+
+describe('Kiro CLI command resolution', () => {
+  const original = {
+    KCH_KIRO_CLI: process.env['KCH_KIRO_CLI'],
+    KIRO_CLI: process.env['KIRO_CLI'],
+    PATH: process.env['PATH'],
+  };
+
+  function restoreEnv(): void {
+    for (const key of Object.keys(original) as Array<keyof typeof original>) {
+      const value = original[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+
+  it('prefers KCH_KIRO_CLI over KIRO_CLI', () => {
+    process.env['KCH_KIRO_CLI'] = '~/bin/internal-kiro-cli';
+    process.env['KIRO_CLI'] = '/tmp/legacy-kiro-cli';
+    assert.equal(resolveKiroCliCommand(), join(process.env['HOME'] ?? '', 'bin', 'internal-kiro-cli'));
+    restoreEnv();
+  });
+
+  it('falls back to KIRO_CLI when KCH_KIRO_CLI is unset', () => {
+    delete process.env['KCH_KIRO_CLI'];
+    process.env['KIRO_CLI'] = '/tmp/legacy-kiro-cli';
+    assert.equal(resolveKiroCliCommand(), '/tmp/legacy-kiro-cli');
+    restoreEnv();
+  });
+
+  it('finds kiro-cli on PATH before installer fallback', async () => {
+    const temp = await mkdtemp(join(tmpdir(), 'kch-kiro-path-'));
+    const fakeKiro = join(temp, 'kiro-cli');
+    delete process.env['KCH_KIRO_CLI'];
+    delete process.env['KIRO_CLI'];
+    process.env['PATH'] = temp;
+    try {
+      await writeFile(fakeKiro, '#!/bin/sh\nprintf "fake kiro-cli\\n"\n', 'utf-8');
+      await chmod(fakeKiro, 0o755);
+      assert.equal(resolveKiroCliCommand(), fakeKiro);
+    } finally {
+      restoreEnv();
+      await rm(temp, { recursive: true, force: true });
+    }
+  });
+});
+
+// ── Kiro pane readiness ──
+
+describe('Kiro pane readiness', () => {
+  it('recognizes the classic prompt', () => {
+    assert.equal(paneLooksReady('[yolo-general] 9% λ !>'), true);
+  });
+
+  it('recognizes the stock Kiro TUI prompt', () => {
+    const capture = [
+      'Welcome to the new Kiro CLI UX!',
+      'Trust All Tools active, confirmations are off',
+      'Kiro · auto /tmp/example',
+      'ask a question or describe a task ↵',
+    ].join('\n');
+    assert.equal(paneLooksReady(capture), true);
   });
 });
 

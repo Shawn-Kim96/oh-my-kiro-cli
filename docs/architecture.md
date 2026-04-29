@@ -8,6 +8,8 @@ kiro-cli-hive has three planes:
 - **Control plane** — the `kch` leader process that spawns workers, dispatches tasks, monitors health, and manages lifecycle
 - **State plane** — file-based IPC under `~/.kch/` that all processes read and write
 
+`kch` resolves the Kiro CLI command from `KCH_KIRO_CLI`, then `KIRO_CLI`, then `kiro-cli` on `PATH`, and finally the official installer location at `~/.local/bin/kiro-cli`.
+
 ```
 ┌─ Control Plane ──────────────────────────────────────────────┐
 │                                                              │

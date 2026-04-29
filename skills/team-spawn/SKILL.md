@@ -45,6 +45,8 @@ kch shutdown <team-name>
 
 ## Available Roles
 
+By default these roles target Amazon-internal yolo agents. For stock/public Kiro CLI, set `KCH_AGENT_PROFILE=public`; most roles use `kiro_default`, and planner-oriented roles use `kiro_planner`.
+
 | Role | Agent | Best For |
 |---|---|---|
 | `executor` | yolo-general | Implementation, building, fixing |

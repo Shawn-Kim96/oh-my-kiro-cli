@@ -1,5 +1,6 @@
 import { runCommand } from '../utils/platform-command.js';
 import { ktStateDir } from '../utils/paths.js';
+import { resolveKiroCliCommand } from '../utils/kiro-cli.js';
 
 export async function runDoctor(): Promise<number> {
   let allOk = true;
@@ -14,11 +15,12 @@ export async function runDoctor(): Promise<number> {
   }
 
   // Check kiro-cli
-  const kiro = runCommand('kiro-cli', ['--version']);
+  const kiroCommand = resolveKiroCliCommand();
+  const kiro = runCommand(kiroCommand, ['--version']);
   if (kiro.ok) {
-    console.log(`  ✓ kiro-cli: ${kiro.stdout}`);
+    console.log(`  ✓ kiro-cli: ${kiro.stdout} (${kiroCommand})`);
   } else {
-    console.log('  ✗ kiro-cli: not found');
+    console.log(`  ✗ kiro-cli: not found (${kiroCommand})`);
     allOk = false;
   }
 

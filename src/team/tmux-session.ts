@@ -2,6 +2,7 @@ import { spawnSync } from 'child_process';
 import { execFile } from 'child_process';
 import { ktStateDir } from '../utils/paths.js';
 import { sleep } from '../utils/sleep.js';
+import { resolveKiroCliCommand, shellEnvAssignment, shellQuote } from '../utils/kiro-cli.js';
 
 // ── Result types ──
 
@@ -134,11 +135,15 @@ export function displayMessage(message: string): void {
 // ── Readiness detection ──
 
 export function paneLooksReady(capture: string): boolean {
+  const lower = capture.toLowerCase();
+  if (lower.includes('ask a question or describe a task')) return true;
+
   const lines = capture.split('\n').filter(l => l.trim().length > 0);
   if (lines.length === 0) return false;
   const lastLine = lines[lines.length - 1] ?? '';
   // kiro-cli prompt patterns vary by agent:
-  // "[yolo-general] 9% λ !>" or "[yolo-general] 7% !>" or just ">"
+  // Old UI: "[yolo-general] 9% λ !>" or "[yolo-general] 7% !>"
+  // New TUI: "ask a question or describe a task"
   return lastLine.includes('λ') || lastLine.includes('!>') || lastLine.includes('λ !>');
 }
 
@@ -227,18 +232,18 @@ export interface SpawnWorkerOptions {
 export function spawnWorkerPane(options: SpawnWorkerOptions): string {
   const stateRoot = ktStateDir();
   const envParts = [
-    `KT_TEAM=${options.teamName}`,
-    `KT_WORKER=${options.workerName}`,
-    `KCH_STATE_ROOT=${stateRoot}`,
-    `KT_STATE_ROOT=${stateRoot}`,
-    `KH_STATE_ROOT=${stateRoot}`,
+    shellEnvAssignment('KT_TEAM', options.teamName),
+    shellEnvAssignment('KT_WORKER', options.workerName),
+    shellEnvAssignment('KCH_STATE_ROOT', stateRoot),
+    shellEnvAssignment('KT_STATE_ROOT', stateRoot),
+    shellEnvAssignment('KH_STATE_ROOT', stateRoot),
   ];
   if (options.env) {
     for (const [k, v] of Object.entries(options.env)) {
-      envParts.push(`${k}=${v}`);
+      envParts.push(shellEnvAssignment(k, v));
     }
   }
-  const cmd = `${envParts.join(' ')} kiro-cli chat --trust-all-tools --agent ${options.agent}`;
+  const cmd = `${envParts.join(' ')} ${shellQuote(resolveKiroCliCommand())} chat --trust-all-tools --agent ${shellQuote(options.agent)}`;
   return splitPane({
     direction: options.direction,
     command: cmd,
