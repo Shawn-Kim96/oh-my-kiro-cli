@@ -1,11 +1,11 @@
 import { join } from 'path';
-import { homedir } from 'os';
 import { mkdir, readdir, rm } from 'fs/promises';
 import { readJson, writeJson } from '../utils/safe-json.js';
 import type { RalphState, RalphEvidence } from './contract.js';
+import { ktStateDir } from '../utils/paths.js';
 
 function ralphDir(slug: string): string {
-  return join(homedir(), '.kt', 'ralph', slug);
+  return join(ktStateDir(), 'ralph', slug);
 }
 
 function statePath(slug: string): string {
@@ -33,7 +33,7 @@ export async function appendRalphEvidence(slug: string, evidence: RalphEvidence)
 }
 
 export async function listRalphSessions(): Promise<string[]> {
-  const dir = join(homedir(), '.kt', 'ralph');
+  const dir = join(ktStateDir(), 'ralph');
   try {
     return await readdir(dir);
   } catch {

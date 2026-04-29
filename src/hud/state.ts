@@ -1,4 +1,4 @@
-import { readTeamConfig, readWorkerStatus, listTasks, listDispatchRequests, listMessages } from '../team/state.js';
+import { readTeamConfig, readWorkerStatus, listTasks, listDispatchRequests, listMessages, readPhaseState } from '../team/state.js';
 import { isPaneAlive } from '../team/tmux-session.js';
 
 export interface HudWorkerState {
@@ -21,6 +21,7 @@ export interface HudState {
 
 export async function collectHudState(teamName: string, _stateRoot: string): Promise<HudState> {
   const config = await readTeamConfig(teamName);
+  const phaseState = await readPhaseState(teamName);
   const now = new Date().toISOString();
 
   if (!config) {
@@ -78,7 +79,7 @@ export async function collectHudState(teamName: string, _stateRoot: string): Pro
 
   return {
     teamName,
-    phase: 'exec', // read from phase file if available
+    phase: phaseState?.current_phase ?? 'unknown',
     workers,
     tasks,
     dispatch,

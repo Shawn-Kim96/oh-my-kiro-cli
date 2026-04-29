@@ -2,13 +2,14 @@ import {
   initTeamState, readTeamConfig, appendEvent, createTask, listTasks,
   readWorkerStatus, writeShutdownRequest, readShutdownAcks,
   writeWorkerInbox, writeMonitorSnapshot, listMessages,
+  readPhaseState, writePhaseState, recordTaskQualityResult, writeWorkerIdentity,
 } from './state.js';
 import {
   isTmuxAvailable, isInsideTmux, createTeamSession, isPaneAlive,
   killPane, sendKeys, spawnWorkerPane, waitForWorkerReady,
 } from './tmux-session.js';
 import type { TeamSession } from './tmux-session.js';
-import type { TeamConfig, WorkerInfo, MonitorSnapshot } from './contracts.js';
+import type { TeamConfig, WorkerInfo, MonitorSnapshot, TaskState } from './contracts.js';
 import { queueInboxInstruction, retryFailedDispatches, deliverPendingMailboxMessages } from './mcp-comm.js';
 import { generateWorkerInbox, generateWorkerInboxLegacy, generateTriggerMessage, generateShutdownInbox } from './worker-bootstrap.js';
 import type { TaskForInbox } from './worker-bootstrap.js';
@@ -27,6 +28,8 @@ import { routeTaskToRole } from './role-router.js';
 import { interviewTask } from './interview.js';
 import { triageTask } from './triage.js';
 import { WikiStore } from '../knowledge/wiki.js';
+import { assessOutput } from './quality-gate.js';
+import { inferPhaseFromTaskCounts, reconcilePhaseState } from './phase-controller.js';
 
 function sanitizeTeamName(task: string): string {
   const slug = task.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 20);
@@ -34,17 +37,99 @@ function sanitizeTeamName(task: string): string {
   return `${slug || 'team'}-${suffix}`;
 }
 
-import { autoCheckpoint } from './checkpoint.js';
-
-function captureTransition(teamName: string, from: string, to: string, reason?: string, cwd?: string): void {
+function captureTransition(teamName: string, from: string, to: string, reason?: string): void {
   try {
     const wiki = new WikiStore(`team-${teamName}`);
     wiki.set(`transition-${Date.now()}`, { from, to, reason, timestamp: new Date().toISOString() });
   } catch { /* best-effort */ }
-  // Auto-checkpoint: fire-and-forget git commit on phase transitions
-  if (cwd) {
-    autoCheckpoint(cwd, from, to, teamName).catch(() => { /* best-effort */ });
+}
+
+function countTasks(tasks: TaskState[]): { pending: number; blocked: number; in_progress: number; completed: number; failed: number } {
+  return {
+    pending: tasks.filter(t => t.status === 'pending').length,
+    blocked: tasks.filter(t => t.status === 'blocked').length,
+    in_progress: tasks.filter(t => t.status === 'in_progress').length,
+    completed: tasks.filter(t => t.status === 'completed').length,
+    failed: tasks.filter(t => t.status === 'failed').length,
+  };
+}
+
+async function reconcileAndPersistPhase(teamName: string, tasks: TaskState[]): Promise<void> {
+  const before = await readPhaseState(teamName);
+  const target = inferPhaseFromTaskCounts(countTasks(tasks));
+  const next = reconcilePhaseState(before, target);
+  const changed =
+    !before ||
+    before.current_phase !== next.current_phase ||
+    before.transitions.length !== next.transitions.length;
+
+  if (!changed) return;
+
+  await writePhaseState(teamName, next);
+  const oldTransitionCount = before?.transitions.length ?? 0;
+  for (const transition of next.transitions.slice(oldTransitionCount)) {
+    await appendEvent(teamName, {
+      type: 'phase_transition',
+      timestamp: transition.at,
+      data: {
+        from: transition.from,
+        to: transition.to,
+        reason: transition.reason ?? 'reconciliation',
+      },
+    });
   }
+}
+
+async function forceTerminalPhase(teamName: string, target: 'complete' | 'failed' | 'cancelled', reason: string): Promise<void> {
+  const before = await readPhaseState(teamName);
+  if (before?.current_phase === target) return;
+
+  const now = new Date().toISOString();
+  const next = {
+    ...(before ?? {
+      current_phase: 'exec' as const,
+      max_fix_attempts: 3,
+      current_fix_attempt: 0,
+      transitions: [],
+      updated_at: now,
+    }),
+    current_phase: target,
+    transitions: [
+      ...(before?.transitions ?? []),
+      { from: before?.current_phase ?? 'exec', to: target, at: now, reason },
+    ],
+    updated_at: now,
+  };
+
+  await writePhaseState(teamName, next);
+  await appendEvent(teamName, {
+    type: 'phase_transition',
+    timestamp: now,
+    data: { from: before?.current_phase ?? 'exec', to: target, reason },
+  });
+}
+
+async function runQualityChecks(teamName: string, tasks: TaskState[]): Promise<TaskState[]> {
+  let changed = false;
+
+  for (const task of tasks) {
+    if (task.status !== 'completed' || task.quality_checked) continue;
+    const quality = assessOutput(task.result ?? '', `${task.subject}\n${task.description}`);
+    const recorded = await recordTaskQualityResult(teamName, task.id, quality);
+    if (!recorded.ok) continue;
+
+    changed = true;
+    await appendEvent(teamName, {
+      type: quality.pass ? 'quality_gate_passed' : 'quality_gate_failed',
+      timestamp: new Date().toISOString(),
+      data: {
+        task_id: task.id,
+        issues: quality.issues,
+      },
+    });
+  }
+
+  return changed ? listTasks(teamName) : tasks;
 }
 
 export async function startTeam(options: {
@@ -54,6 +139,7 @@ export async function startTeam(options: {
   cwd: string;
   cleanup?: boolean;
   worktreeMode?: import('./worktree.js').WorktreeMode;
+  mergeWorktrees?: boolean;
   explicitAgentType?: boolean;
   explicitWorkerCount?: boolean;
 }): Promise<void> {
@@ -202,6 +288,18 @@ export async function startTeam(options: {
   for (let i = 0; i < workers.length; i++) {
     const w = workers[i];
     if (w) w.pane_id = session.workerPaneIds[i] ?? null;
+    if (w && w.pane_id) {
+      await writeWorkerIdentity(teamName, w.name, {
+        team_name: teamName,
+        worker_name: w.name,
+        role: w.role,
+        agent: w.agent,
+        pane_id: w.pane_id,
+        team_state_root: stateRoot,
+        leader_cwd: options.cwd,
+        created_at: new Date().toISOString(),
+      });
+    }
   }
   config.leader_pane_id = session.leaderPaneId;
   const { saveTeamConfig } = await import('./state.js');
@@ -283,7 +381,7 @@ export async function startTeam(options: {
   }
 
   // Worktree merge report
-  if (worktreeMode.enabled && baseRef && isGitRepository(options.cwd)) {
+  if (worktreeMode.enabled && options.mergeWorktrees && baseRef && isGitRepository(options.cwd)) {
     console.log('\nWorktree merge status:');
     for (let i = 0; i < worktreeResults.length; i++) {
       const wt = worktreeResults[i];
@@ -293,6 +391,8 @@ export async function startTeam(options: {
       const icon = result.success ? '✓' : '✗';
       console.log(`  ${icon} ${workerName}: ${result.strategy} (${result.commitCount} commits)${result.error ? ` — ${result.error}` : ''}`);
     }
+  } else if (worktreeMode.enabled) {
+    console.log('\nWorktree merge skipped. Re-run with --merge-worktrees or review worker worktrees manually.');
   }
 
   if (options.cleanup) {
@@ -308,6 +408,7 @@ export async function startTeamDetached(options: {
   task: string;
   cwd: string;
   worktreeMode?: import('./worktree.js').WorktreeMode;
+  mergeWorktrees?: boolean;
   explicitAgentType?: boolean;
   explicitWorkerCount?: boolean;
 }): Promise<void> {
@@ -368,6 +469,18 @@ export async function startTeamDetached(options: {
   for (let i = 0; i < workers.length; i++) {
     const w = workers[i];
     if (w) w.pane_id = session.workerPaneIds[i] ?? null;
+    if (w && w.pane_id) {
+      await writeWorkerIdentity(teamName, w.name, {
+        team_name: teamName,
+        worker_name: w.name,
+        role: w.role,
+        agent: w.agent,
+        pane_id: w.pane_id,
+        team_state_root: stateRoot,
+        leader_cwd: options.cwd,
+        created_at: new Date().toISOString(),
+      });
+    }
   }
   config.leader_pane_id = session.leaderPaneId;
   const { saveTeamConfig } = await import('./state.js');
@@ -397,7 +510,6 @@ export async function resumeTeam(teamName: string, stateRoot: string): Promise<v
   const config = await readTeamConfig(teamName);
   if (!config) throw new Error(`Team not found: ${teamName}`);
 
-  const { readPhaseState } = await import('./state.js');
   const phase = await readPhaseState(teamName);
   const terminalPhases = new Set(['complete', 'failed', 'cancelled']);
   if (phase && terminalPhases.has(phase.current_phase)) {
@@ -506,7 +618,9 @@ export async function monitorTeam(
     }
 
     // 2. Task status check
-    const tasks = await listTasks(teamName);
+    let tasks = await listTasks(teamName);
+    tasks = await runQualityChecks(teamName, tasks);
+    await reconcileAndPersistPhase(teamName, tasks);
     for (const t of tasks) {
       if (t.status === 'completed') {
         await appendEvent(teamName, { type: 'task_completed', timestamp: new Date().toISOString(), data: { task_id: t.id } });
@@ -576,9 +690,11 @@ export async function monitorTeam(
         }
       }
       if (allWorkersIdle) {
-        console.log('All tasks terminal, all workers idle. Finishing.');
-        // Auto-capture phase transition to wiki
-        captureTransition(teamName, 'running', 'complete', 'all tasks terminal, all workers idle', config.leader_cwd);
+        const failedCount = tasks.filter(t => t.status === 'failed').length;
+        const target = failedCount > 0 ? 'failed' : 'complete';
+        await forceTerminalPhase(teamName, target, 'all tasks terminal, all workers idle');
+        console.log(`All tasks terminal, all workers idle. Finishing as ${target}.`);
+        captureTransition(teamName, 'running', target, 'all tasks terminal, all workers idle');
         break;
       }
     }
@@ -586,8 +702,9 @@ export async function monitorTeam(
     const anyAlive = session.workerPaneIds.some(id => isPaneAlive(id));
     if (!anyAlive) {
       console.log('All worker panes are dead. Finishing.');
+      await forceTerminalPhase(teamName, 'failed', 'all worker panes dead');
       // Auto-capture phase transition to wiki
-      captureTransition(teamName, 'running', 'failed', 'all worker panes dead', config.leader_cwd);
+      captureTransition(teamName, 'running', 'failed', 'all worker panes dead');
       break;
     }
 
@@ -666,6 +783,7 @@ export async function gracefulShutdown(
   }
 
   console.log(`Team ${teamName} shut down (${reason}).`);
+  await forceTerminalPhase(teamName, 'cancelled', reason);
   // Auto-capture phase transition to wiki
-  captureTransition(teamName, 'running', 'shutdown', reason, config.leader_cwd);
+  captureTransition(teamName, 'running', 'shutdown', reason);
 }

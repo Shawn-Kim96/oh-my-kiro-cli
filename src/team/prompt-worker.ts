@@ -51,11 +51,11 @@ export async function sendPromptWorkerMessage(
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
-    const outChunks: Buffer[] = [];
-    const errChunks: Buffer[] = [];
+    const outChunks: Uint8Array[] = [];
+    const errChunks: Uint8Array[] = [];
 
-    child.stdout.on('data', (c: Buffer) => outChunks.push(c));
-    child.stderr.on('data', (c: Buffer) => errChunks.push(c));
+    child.stdout.on('data', (c: Uint8Array) => outChunks.push(c));
+    child.stderr.on('data', (c: Uint8Array) => errChunks.push(c));
 
     child.stdin.write(message);
     child.stdin.end();

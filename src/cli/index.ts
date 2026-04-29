@@ -3,6 +3,11 @@ import { runDoctor } from './doctor.js';
 import { apiCommand } from './api.js';
 import { statusCommand } from './status.js';
 import { shutdownCommand } from './shutdown.js';
+import { cancelCommand } from './cancel.js';
+import { runSetup } from './setup.js';
+import { runCleanup } from './cleanup.js';
+import { traceCommand } from './trace.js';
+import { exploreCommand } from './explore.js';
 import { startTeam, startTeamDetached, resumeTeam } from '../team/runtime.js';
 import { scaleUp, scaleDown } from '../team/scaling.js';
 import { parseSpec } from '../config/agent-mapping.js';
@@ -16,7 +21,7 @@ import { startRalph } from '../ralph/runtime.js';
 import { notify, loadNotificationConfig } from '../notifications/notifier.js';
 
 const program = new Command()
-  .name('kh')
+  .name('kch')
   .description('kiro-cli-hive — multi-agent orchestrator for kiro-cli')
   .version('0.1.0');
 
@@ -27,8 +32,9 @@ program
   .option('--cwd <dir>', 'Working directory', process.cwd())
   .option('--cleanup', 'Remove team state after completion')
   .option('--worktree [branch]', 'Use git worktrees for worker isolation')
+  .option('--merge-worktrees', 'Merge/cherry-pick worker worktree changes after completion')
   .option('--detach', 'Start team in background, return team name immediately')
-  .action(async (spec: string | undefined, task: string, opts: { cwd: string; cleanup?: boolean; worktree?: boolean | string; detach?: boolean }) => {
+  .action(async (spec: string | undefined, task: string, opts: { cwd: string; cleanup?: boolean; worktree?: boolean | string; mergeWorktrees?: boolean; detach?: boolean }) => {
     const { workerCount, agentType } = parseSpec(spec);
     const explicitAgentType = spec !== undefined && spec.includes(':');
     const explicitWorkerCount = spec !== undefined && /^\d/.test(spec);
@@ -41,15 +47,35 @@ program
       }
     }
     if (opts.detach) {
-      await startTeamDetached({ workerCount, agentType, task, cwd: opts.cwd, worktreeMode, explicitAgentType, explicitWorkerCount });
+      await startTeamDetached({ workerCount, agentType, task, cwd: opts.cwd, worktreeMode, mergeWorktrees: Boolean(opts.mergeWorktrees), explicitAgentType, explicitWorkerCount });
     } else {
-      await startTeam({ workerCount, agentType, task, cwd: opts.cwd, cleanup: opts.cleanup, worktreeMode, explicitAgentType, explicitWorkerCount });
+      await startTeam({ workerCount, agentType, task, cwd: opts.cwd, cleanup: opts.cleanup, worktreeMode, mergeWorktrees: Boolean(opts.mergeWorktrees), explicitAgentType, explicitWorkerCount });
     }
   });
 
 program.addCommand(statusCommand());
 program.addCommand(shutdownCommand());
+program.addCommand(cancelCommand());
 program.addCommand(apiCommand);
+program.addCommand(traceCommand());
+program.addCommand(exploreCommand());
+
+program
+  .command('setup')
+  .description('Prepare kch state directories')
+  .option('--dry-run', 'Show planned setup changes without writing')
+  .action(async (opts: { dryRun?: boolean }) => {
+    await runSetup({ dryRun: opts.dryRun });
+  });
+
+program
+  .command('cleanup')
+  .description('Clean stale kch runtime artifacts')
+  .option('--dry-run', 'Show planned cleanup without deleting', true)
+  .option('--apply', 'Apply cleanup changes')
+  .action(async (opts: { dryRun?: boolean; apply?: boolean }) => {
+    await runCleanup({ dryRun: opts.dryRun, apply: opts.apply });
+  });
 
 program
   .command('hud')
@@ -129,7 +155,7 @@ program
   .command('doctor')
   .description('Check environment prerequisites')
   .action(async () => {
-    console.log('kh doctor — checking environment...\n');
+    console.log('kch doctor — checking environment...\n');
     const code = await runDoctor();
     process.exitCode = code;
   });
@@ -194,11 +220,11 @@ program
   .command('notify <message>')
   .description('Send a manual notification via configured channels')
   .option('--type <type>', 'Notification type: info, success, warning, error', 'info')
-  .option('--title <title>', 'Notification title', 'kh notification')
+  .option('--title <title>', 'Notification title', 'kch notification')
   .action(async (message: string, opts: { type: string; title: string }) => {
     const config = await loadNotificationConfig();
     if (!config) {
-      console.error('No notification config found. Create ~/.kt/notifications.json');
+      console.error(`No notification config found. Create ${ktStateDir()}/notifications.json`);
       process.exitCode = 1;
       return;
     }

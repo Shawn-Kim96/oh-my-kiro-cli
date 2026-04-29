@@ -90,6 +90,10 @@ export async function readPhaseState(teamName: string): Promise<PhaseState | nul
   return readJson<PhaseState>(phasePath(teamName));
 }
 
+export async function writePhaseState(teamName: string, phase: PhaseState): Promise<void> {
+  await writeJson(phasePath(teamName), phase);
+}
+
 // ── Worker ──
 export async function writeWorkerIdentity(teamName: string, workerName: string, identity: WorkerIdentity): Promise<void> {
   await writeJson(workerIdentityPath(teamName, workerName), identity);
@@ -185,12 +189,13 @@ export async function listTasks(teamName: string): Promise<TaskState[]> {
 
 export async function claimTask(
   teamName: string, taskId: string, workerName: string, expectedVersion: number
-): Promise<{ ok: boolean; claim_token?: string; version?: number }> {
+): Promise<{ ok: boolean; claim_token?: string; version?: number; error?: string }> {
   return withTaskClaimLock(teamName, taskId, async () => {
     const task = await readTask(teamName, taskId);
-    if (!task) return { ok: false };
-    if (task.version !== expectedVersion) return { ok: false };
-    if (task.status !== 'pending' && task.status !== 'blocked') return { ok: false };
+    if (!task) return { ok: false, error: 'task_not_found' };
+    if (task.version !== expectedVersion) return { ok: false, error: `expected_version_mismatch:current=${task.version}` };
+    if (task.status !== 'pending' && task.status !== 'blocked') return { ok: false, error: `invalid_task_status:${task.status}` };
+    if (task.owner !== null && task.owner !== workerName) return { ok: false, error: `task_owned_by:${task.owner}` };
 
     const token = randomUUID();
     task.owner = workerName;
@@ -206,15 +211,16 @@ export async function claimTask(
 export async function transitionTaskStatus(
   teamName: string, taskId: string, from: TaskStatus, to: TaskStatus,
   claimToken: string, patch?: { result?: string; error?: string }
-): Promise<{ ok: boolean }> {
+): Promise<{ ok: boolean; error?: string }> {
   return withTaskClaimLock(teamName, taskId, async () => {
     const task = await readTask(teamName, taskId);
-    if (!task) return { ok: false };
-    if (task.status !== from) return { ok: false };
-    if (task.claim_token !== claimToken) return { ok: false };
+    if (!task) return { ok: false, error: 'task_not_found' };
+    if (!claimToken) return { ok: false, error: 'missing_claim_token' };
+    if (task.status !== from) return { ok: false, error: `status_mismatch:current=${task.status}` };
+    if (task.claim_token !== claimToken) return { ok: false, error: 'invalid_claim_token' };
 
     const allowed = TASK_STATUS_TRANSITIONS[from];
-    if (!allowed.includes(to)) return { ok: false };
+    if (!allowed.includes(to)) return { ok: false, error: `invalid_transition:${from}->${to}` };
 
     task.status = to;
     task.version++;
@@ -232,17 +238,43 @@ export async function transitionTaskStatus(
 
 export async function releaseTaskClaim(
   teamName: string, taskId: string, claimToken: string
-): Promise<{ ok: boolean }> {
+): Promise<{ ok: boolean; error?: string }> {
   return withTaskClaimLock(teamName, taskId, async () => {
     const task = await readTask(teamName, taskId);
-    if (!task) return { ok: false };
-    if (task.claim_token !== claimToken) return { ok: false };
+    if (!task) return { ok: false, error: 'task_not_found' };
+    if (!claimToken) return { ok: false, error: 'missing_claim_token' };
+    if (task.claim_token !== claimToken) return { ok: false, error: 'invalid_claim_token' };
 
     task.status = 'pending';
     task.owner = null;
     task.claim_token = null;
     task.version++;
     task.updated_at = new Date().toISOString();
+    await writeJson(taskPath(teamName, taskId), task);
+    return { ok: true };
+  });
+}
+
+export async function recordTaskQualityResult(
+  teamName: string,
+  taskId: string,
+  result: { pass: boolean; issues: string[] },
+): Promise<{ ok: boolean; error?: string }> {
+  return withTaskClaimLock(teamName, taskId, async () => {
+    const task = await readTask(teamName, taskId);
+    if (!task) return { ok: false, error: 'task_not_found' };
+    if (task.status !== 'completed') return { ok: false, error: `invalid_task_status:${task.status}` };
+
+    task.quality_checked = true;
+    task.quality_passed = result.pass;
+    task.quality_issues = result.issues;
+    task.updated_at = new Date().toISOString();
+
+    if (!result.pass) {
+      task.status = 'failed';
+      task.error = `quality_gate:${result.issues.join('; ')}`;
+    }
+
     await writeJson(taskPath(teamName, taskId), task);
     return { ok: true };
   });

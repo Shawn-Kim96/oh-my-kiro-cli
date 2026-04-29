@@ -1,8 +1,28 @@
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { homedir } from 'os';
 
-export function ktStateDir(): string { return join(homedir(), '.kt'); }
-export function ktTeamDir(teamName: string): string { return join(ktStateDir(), 'teams', teamName); }
-export function ktWorkerDir(teamName: string, workerName: string): string { return join(ktTeamDir(teamName), 'workers', workerName); }
-export function ktLogsDir(): string { return join(ktStateDir(), 'logs'); }
-export function ktWikiDir(namespace: string): string { return join(ktStateDir(), 'wiki', namespace); }
+function expandHome(path: string): string {
+  if (path === '~') return homedir();
+  if (path.startsWith('~/')) return join(homedir(), path.slice(2));
+  return path;
+}
+
+export function kchStateDir(): string {
+  const raw =
+    process.env['KCH_STATE_ROOT']?.trim() ||
+    process.env['KT_STATE_ROOT']?.trim() ||
+    process.env['KH_STATE_ROOT']?.trim();
+  return raw ? resolve(expandHome(raw)) : join(homedir(), '.kch');
+}
+
+export function kchTeamDir(teamName: string): string { return join(kchStateDir(), 'teams', teamName); }
+export function kchWorkerDir(teamName: string, workerName: string): string { return join(kchTeamDir(teamName), 'workers', workerName); }
+export function kchLogsDir(): string { return join(kchStateDir(), 'logs'); }
+export function kchWikiDir(namespace: string): string { return join(kchStateDir(), 'wiki', namespace); }
+
+// Compatibility exports: internal names remain kt* during migration.
+export function ktStateDir(): string { return kchStateDir(); }
+export function ktTeamDir(teamName: string): string { return kchTeamDir(teamName); }
+export function ktWorkerDir(teamName: string, workerName: string): string { return kchWorkerDir(teamName, workerName); }
+export function ktLogsDir(): string { return kchLogsDir(); }
+export function ktWikiDir(namespace: string): string { return kchWikiDir(namespace); }

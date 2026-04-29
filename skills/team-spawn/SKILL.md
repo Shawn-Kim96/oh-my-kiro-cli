@@ -1,15 +1,15 @@
 ---
 name: team-spawn
-description: Delegate work to independent kiro-cli workers via kiro-cli-hive (kh) tmux orchestration
+description: Delegate work to independent kiro-cli workers via kiro-cli-hive (kch) tmux orchestration
 ---
 
 # team-spawn
 
-Use `kh` to spawn independent kiro-cli agent sessions via tmux for tasks that exceed what `use_subagent` can handle.
+Use `kch` to spawn independent kiro-cli agent sessions via tmux for tasks that exceed what `use_subagent` can handle.
 
-## When to use kh vs use_subagent
+## When to use kch vs use_subagent
 
-| Criteria | use_subagent | kh team |
+| Criteria | use_subagent | kch team |
 |---|---|---|
 | Simple single-turn query | ✅ Preferred | Overkill |
 | Complex multi-step task | Context limited | ✅ Full agent session |
@@ -18,29 +18,29 @@ Use `kh` to spawn independent kiro-cli agent sessions via tmux for tasks that ex
 | Need multi-turn interaction | Single response | ✅ Persistent session |
 | Need worker to use git | No git access | ✅ Full git access |
 
-**Rule of thumb:** If the task needs git, multiple tool calls, or would benefit from its own context window — use `kh`.
+**Rule of thumb:** If the task needs git, multiple tool calls, or would benefit from its own context window — use `kch`.
 
 ## Usage
 
 ### Single worker
 ```bash
-kh team 1:explorer "Find all API endpoints in src/ and list them with their HTTP methods"
+kch team 1:explorer "Find all API endpoints in src/ and list them with their HTTP methods"
 ```
 
 ### Parallel workers
 ```bash
-kh team 3:executor "Implement OAuth: 1) callback handler 2) token refresh 3) integration tests"
+kch team 3:executor "Implement OAuth: 1) callback handler 2) token refresh 3) integration tests"
 ```
 
 ### Check status
 ```bash
-kh status <team-name>
-kh status <team-name> --json
+kch status <team-name>
+kch status <team-name> --json
 ```
 
 ### Shutdown
 ```bash
-kh shutdown <team-name>
+kch shutdown <team-name>
 ```
 
 ## Available Roles
@@ -73,7 +73,7 @@ The role router can also auto-select roles based on task keywords (e.g., "find" 
 
 ## Result Format
 
-`kh status <team-name> --json` returns:
+`kch status <team-name> --json` returns:
 
 ```json
 {
@@ -94,5 +94,5 @@ The role router can also auto-select roles based on task keywords (e.g., "find" 
 
 - `tmux` >= 3.0 — must be installed and available on PATH
 - `kiro-cli` — the agent runtime each worker session uses
-- `kh` — the kiro-cli-hive CLI orchestrator
+- `kch` — the kiro-cli-hive CLI orchestrator
 - Must be running inside a tmux session (`$TMUX` set)

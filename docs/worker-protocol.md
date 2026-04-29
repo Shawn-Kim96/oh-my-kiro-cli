@@ -1,19 +1,21 @@
 # Worker Protocol Reference
 
-This document describes the complete protocol that kiro-cli agents follow when operating as kt workers.
+This document describes the complete protocol that kiro-cli agents follow when operating as `kch` workers.
 
 ## Overview
 
-A worker is a kiro-cli agent running in a tmux pane. It receives instructions via an `inbox.md` file and interacts with team state through the `kt api` CLI and direct file writes.
+A worker is a kiro-cli agent running in a tmux pane. It receives instructions via an `inbox.md` file and interacts with team state through the `kch api` CLI and direct file writes.
 
 ## State Root Resolution
 
 Workers resolve the team state directory in this order:
 
-1. `$KT_STATE_ROOT` environment variable
-2. Worker identity file: `<state_root>/teams/<team>/workers/<worker>/identity.json` → `team_state_root`
-3. Team config: `<state_root>/teams/<team>/config.json` → `team_state_root`
-4. Default: `~/.kt/`
+1. `$KCH_STATE_ROOT` environment variable
+2. `$KT_STATE_ROOT` compatibility environment variable
+3. `$KH_STATE_ROOT` compatibility environment variable
+4. Worker identity file: `<state_root>/teams/<team>/workers/<worker>/identity.json` → `team_state_root`
+5. Team config: `<state_root>/teams/<team>/config.json` → `team_state_root`
+6. Default: `~/.kch/`
 
 Environment variables `KT_TEAM` and `KT_WORKER` are set automatically when the pane is spawned.
 
@@ -23,7 +25,7 @@ When a worker's pane becomes ready (kiro-cli shows the `λ` prompt), the leader 
 
 **1. Send startup ACK:**
 ```bash
-kt api send-message --input '{
+kch api send-message --input '{
   "team_name": "<team>",
   "from_worker": "<worker>",
   "to_worker": "leader",
@@ -31,7 +33,7 @@ kt api send-message --input '{
 }' --json
 ```
 
-`from_worker` is required on every `kt api` call. The API cannot auto-detect worker identity.
+`from_worker` is required on every `kch api` call. The API cannot auto-detect worker identity.
 
 **2. Read inbox:**
 ```
@@ -48,7 +50,7 @@ kt api send-message --input '{
 ### Claim
 
 ```bash
-kt api claim-task --input '{
+kch api claim-task --input '{
   "team_name": "<team>",
   "task_id": "<id>",
   "worker": "<worker>",
@@ -77,10 +79,7 @@ After claiming, the worker:
 
 2. Does the actual work using kiro-cli tools (shell, file I/O, git, etc.)
 
-3. Commits changes before reporting:
-   ```bash
-   git add -A && git commit -m "task: <subject>"
-   ```
+3. Does not commit, stage, merge, or cherry-pick unless the leader explicitly launched the team with a git mutation policy.
 
 4. Writes result:
    ```json
@@ -95,7 +94,7 @@ After claiming, the worker:
 ### Complete
 
 ```bash
-kt api transition-task-status --input '{
+kch api transition-task-status --input '{
   "team_name": "<team>",
   "task_id": "<id>",
   "from": "in_progress",
@@ -108,7 +107,7 @@ kt api transition-task-status --input '{
 After completion, update status to `idle` and notify the leader:
 
 ```bash
-kt api send-message --input '{
+kch api send-message --input '{
   "team_name": "<team>",
   "from_worker": "<worker>",
   "to_worker": "leader",
@@ -119,7 +118,7 @@ kt api send-message --input '{
 ### Fail
 
 ```bash
-kt api transition-task-status --input '{
+kch api transition-task-status --input '{
   "team_name": "<team>",
   "task_id": "<id>",
   "from": "in_progress",
@@ -134,7 +133,7 @@ kt api transition-task-status --input '{
 If a worker needs to give up a task without completing or failing it:
 
 ```bash
-kt api release-task-claim --input '{
+kch api release-task-claim --input '{
   "team_name": "<team>",
   "task_id": "<id>",
   "claim_token": "<token>"
@@ -157,7 +156,7 @@ failed ──→ pending (retry)
 
 `completed` and `failed` are terminal — they clear `owner` and `claim_token`.
 
-## kt api Operations
+## kch api Operations
 
 All operations accept `--input '<json>'` and optionally `--json` for structured output.
 
@@ -199,12 +198,12 @@ Workers can send messages to each other or to the leader.
 
 **Check mailbox** (when instructed by leader via send-keys):
 ```bash
-kt api mailbox-list --input '{"team_name":"<team>","worker":"<worker>"}' --json
+kch api mailbox-list --input '{"team_name":"<team>","worker":"<worker>"}' --json
 ```
 
 **Mark as delivered** after reading:
 ```bash
-kt api mailbox-mark-delivered --input '{
+kch api mailbox-mark-delivered --input '{
   "team_name": "<team>",
   "worker": "<worker>",
   "message_id": "<id>"
@@ -237,10 +236,10 @@ When the leader initiates shutdown:
 2. Leader sends `tmux send-keys` with shutdown notification
 3. Worker reads shutdown inbox and:
    - Finishes current atomic operation
-   - Commits uncommitted changes
+   - Leaves uncommitted work in place unless explicitly instructed to commit
    - Sends shutdown ACK:
      ```bash
-     kt api send-message --input '{
+     kch api send-message --input '{
        "team_name": "<team>",
        "from_worker": "<worker>",
        "to_worker": "leader",
@@ -256,7 +255,8 @@ With `--force`, the leader skips the ACK wait and kills panes immediately.
 - Focus ONLY on the assigned task
 - Do NOT spawn subagents (`use_subagent`)
 - Do NOT modify files outside task scope
-- Do NOT write task lifecycle fields (`status`, `owner`, `claim_token`) directly — use `kt api`
-- Always write `result.json` BEFORE reporting completion via `kt api`
-- Always commit changes BEFORE reporting completion
-- Always include `from_worker` in every `kt api` call
+- Do NOT write task lifecycle fields (`status`, `owner`, `claim_token`) directly — use `kch api`
+- Always write `result.json` BEFORE reporting completion via `kch api`
+- Always include `claim_token` in every task transition or release call
+- Always include `from_worker` in every `kch api` call
+- Do NOT commit unless explicitly instructed by the leader

@@ -1,5 +1,6 @@
 import { Command } from 'commander';
-import { readTeamConfig, listTeams, listTasks, readWorkerStatus } from '../team/state.js';
+import { readTeamConfig, listTasks, readWorkerStatus } from '../team/state.js';
+import { latestTeamName } from './team-select.js';
 
 export function statusCommand(): Command {
   return new Command('status')
@@ -8,13 +9,12 @@ export function statusCommand(): Command {
     .action(async (teamName: string | undefined, opts: { json?: boolean }) => {
       let name = teamName;
       if (!name) {
-        const teams = await listTeams();
-        if (teams.length === 0) {
+        const latest = await latestTeamName();
+        if (!latest) {
           console.log('No teams found.');
           return;
         }
-        teams.sort();
-        name = teams[teams.length - 1];
+        name = latest;
       }
       if (!name) { console.log('No teams found.'); return; }
 

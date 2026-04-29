@@ -1,16 +1,16 @@
-# kiro-cli-hive (kh)
+# kiro-cli-hive (kch)
 
 > Multi-agent orchestration for kiro-cli, powered by tmux.
 
 **kiro-cli-hive** lets you spawn a team of independent kiro-cli agents in tmux panes, each with its own full tool access, persistent session, and lifecycle. A leader process coordinates task assignment, monitors progress, and collects results — all through file-based IPC and `tmux send-keys`.
 
-Think of it as a foreman on a construction site: you describe the job, `kh` breaks it into tasks, assigns workers, watches for problems, and reports back when everything's done.
+Think of it as a foreman on a construction site: you describe the job, `kch` breaks it into tasks, assigns workers, watches for problems, and reports back when everything's done.
 
 ## Why kiro-cli-hive?
 
 kiro-cli's built-in `use_subagent` is great for simple, single-turn queries. But it falls short for real work:
 
-| Limitation of `use_subagent` | How `kh` solves it |
+| Limitation of `use_subagent` | How `kch` solves it |
 |---|---|
 | Shared context window | Each worker gets its own independent kiro-cli session |
 | Limited tool access | Full shell, git, file I/O — everything kiro-cli can do |
@@ -18,7 +18,7 @@ kiro-cli's built-in `use_subagent` is great for simple, single-turn queries. But
 | Max ~4 concurrent | Scale to 8+ workers |
 | No lifecycle control | Monitor, scale, resume, shutdown |
 
-**Inspired by [oh-my-codex (omx)](https://github.com/Yeachan-Heo/oh-my-codex)** — the operational runtime for OpenAI Codex CLI. `kh` brings the same team orchestration model to kiro-cli, adapted for its agent system and trust model.
+**Inspired by [oh-my-codex (omx)](https://github.com/Yeachan-Heo/oh-my-codex)** — the operational runtime for OpenAI Codex CLI. `kch` brings the same team orchestration model to kiro-cli, adapted for its agent system and trust model.
 
 ## How It Works
 
@@ -28,7 +28,7 @@ kiro-cli's built-in `use_subagent` is great for simple, single-turn queries. But
 │                                                         │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
 │  │   Leader      │  │  worker-0    │  │  worker-1    │  │
-│  │   (kh team)   │  │  kiro-cli    │  │  kiro-cli    │  │
+│  │   (kch team)   │  │  kiro-cli    │  │  kiro-cli    │  │
 │  │               │  │  yolo-general│  │  yolo-explorer│ │
 │  │  • monitor    │  │              │  │              │  │
 │  │  • dispatch   │  │  reads       │  │  reads       │  │
@@ -38,7 +38,7 @@ kiro-cli's built-in `use_subagent` is great for simple, single-turn queries. But
 │         └────────┬────────┴────────┬────────┘           │
 │                  ▼                 ▼                     │
 │         ┌──────────────────────────────┐                │
-│         │  ~/.kh/teams/<team-name>/    │                │
+│         │  ~/.kch/teams/<team-name>/    │                │
 │         │  ├── config.json             │                │
 │         │  ├── phase.json              │                │
 │         │  ├── events.jsonl            │                │
@@ -59,7 +59,7 @@ kiro-cli's built-in `use_subagent` is great for simple, single-turn queries. But
 **Communication flow:**
 1. Leader writes `inbox.md` for each worker with task + protocol instructions
 2. Leader uses `tmux send-keys` to trigger the worker to read its inbox
-3. Workers use `kh api` CLI to claim tasks, transition status, and send messages
+3. Workers use `kch api` CLI to claim tasks, transition status, and send messages
 4. Workers write `status.json` and `result.json` directly to the state directory
 5. Leader's monitor loop polls state files, retries failed dispatches, and detects completion
 
@@ -78,16 +78,16 @@ npm i -g kiro-cli-hive
 Verify your environment:
 
 ```bash
-kh doctor
+kch doctor
 ```
 
 Expected output:
 ```
-kh doctor — checking environment...
+kch doctor — checking environment...
 
   ✓ tmux: tmux 3.x
   ✓ kiro-cli: x.x.x
-  ✓ kh: /path/to/kh
+  ✓ kch: /path/to/kch
   ✓ tmux session: yes
 ```
 
@@ -100,7 +100,7 @@ tmux new -s work
 
 **2. Launch a team:**
 ```bash
-kh team 2:executor "Implement a hello-world Express server with tests"
+kch team 2:executor "Implement a hello-world Express server with tests"
 ```
 
 This spawns 2 workers using the `executor` role (mapped to `yolo-general` agent). Each gets a tmux pane, an inbox with the task, and the full worker protocol.
@@ -108,40 +108,40 @@ This spawns 2 workers using the `executor` role (mapped to `yolo-general` agent)
 **3. Watch progress:**
 ```bash
 # Quick status
-kh status
+kch status
 
 # Live HUD dashboard
-kh hud --team <team-name> --watch
+kch hud --team <team-name> --watch
 ```
 
 **4. Check results:**
 ```bash
-kh status <team-name> --json
+kch status <team-name> --json
 ```
 
 **5. Shut down when done:**
 ```bash
-kh shutdown <team-name>
+kch shutdown <team-name>
 ```
 
 ## CLI Reference
 
-### `kh team [spec] <task>`
+### `kch team [spec] <task>`
 
 Launch a team of agents.
 
 ```bash
 # 1 executor (default)
-kh team "Implement OAuth callback handler"
+kch team "Implement OAuth callback handler"
 
 # 3 executors
-kh team 3 "Build REST API with CRUD endpoints"
+kch team 3 "Build REST API with CRUD endpoints"
 
 # 2 explorers
-kh team 2:explorer "Find all authentication patterns in the codebase"
+kch team 2:explorer "Find all authentication patterns in the codebase"
 
 # 1 writer
-kh team 1:writer "Write API documentation for the auth module"
+kch team 1:writer "Write API documentation for the auth module"
 ```
 
 **Spec format:** `[count][:role]` — count defaults to 1, role defaults to `executor`.
@@ -150,78 +150,78 @@ kh team 1:writer "Write API documentation for the auth module"
 - `--cwd <dir>` — working directory for workers (default: current directory)
 - `--cleanup` — remove team state directory after completion
 
-### `kh status [team-name]`
+### `kch status [team-name]`
 
 Show team status. Omit team name to show the most recent team.
 
 ```bash
-kh status
-kh status my-team-123456
-kh status my-team-123456 --json
+kch status
+kch status my-team-123456
+kch status my-team-123456 --json
 ```
 
 **JSON output includes:** team name, creation time, worker states, and all task statuses with results.
 
-### `kh shutdown <team-name>`
+### `kch shutdown <team-name>`
 
 Gracefully shut down a team. Sends shutdown instructions to each worker's inbox, waits for ACKs (up to 15s), then kills panes.
 
 ```bash
-kh shutdown my-team-123456
-kh shutdown my-team-123456 --force   # skip ACK wait, kill immediately
+kch shutdown my-team-123456
+kch shutdown my-team-123456 --force   # skip ACK wait, kill immediately
 ```
 
-### `kh scale-up <team> <count>`
+### `kch scale-up <team> <count>`
 
 Add workers to a running team. New workers auto-assign to pending tasks.
 
 ```bash
-kh scale-up my-team-123456 2
-kh scale-up my-team-123456 1 --role reviewer
+kch scale-up my-team-123456 2
+kch scale-up my-team-123456 1 --role reviewer
 ```
 
-### `kh scale-down <team> <worker>`
+### `kch scale-down <team> <worker>`
 
 Remove a specific worker. Fails if the worker is currently busy (`state=working`). Releases any task claims held by the worker.
 
 ```bash
-kh scale-down my-team-123456 worker-2
+kch scale-down my-team-123456 worker-2
 ```
 
-### `kh resume <team-name>`
+### `kch resume <team-name>`
 
 Resume a team after the leader process was killed (e.g., Ctrl+C). Reconnects to existing worker panes, respawns dead workers, reassigns pending tasks, and restarts the monitor loop.
 
 ```bash
-kh resume my-team-123456
+kch resume my-team-123456
 ```
 
-### `kh api <operation>`
+### `kch api <operation>`
 
 Worker interop API. Used by workers (kiro-cli agents) to interact with team state. Not typically called by humans.
 
 ```bash
-kh api claim-task --input '{"team_name":"...","task_id":"1","worker":"worker-0"}' --json
-kh api transition-task-status --input '{"team_name":"...","task_id":"1","from":"in_progress","to":"completed","result":"Done"}' --json
-kh api send-message --input '{"team_name":"...","from_worker":"worker-0","to_worker":"leader","body":"ACK"}' --json
-kh api mailbox-list --input '{"team_name":"...","worker":"worker-0"}' --json
-kh api mailbox-mark-delivered --input '{"team_name":"...","worker":"worker-0","message_id":"..."}' --json
-kh api release-task-claim --input '{"team_name":"...","task_id":"1","claim_token":"..."}' --json
-kh api read-task --input '{"team_name":"...","task_id":"1"}' --json
-kh api list-tasks --input '{"team_name":"..."}' --json
-kh api create-task --input '{"team_name":"...","subject":"...","description":"..."}' --json
+kch api claim-task --input '{"team_name":"...","task_id":"1","worker":"worker-0","expected_version":1}' --json
+kch api transition-task-status --input '{"team_name":"...","task_id":"1","from":"in_progress","to":"completed","claim_token":"...","result":"Done"}' --json
+kch api send-message --input '{"team_name":"...","from_worker":"worker-0","to_worker":"leader","body":"ACK"}' --json
+kch api mailbox-list --input '{"team_name":"...","worker":"worker-0"}' --json
+kch api mailbox-mark-delivered --input '{"team_name":"...","worker":"worker-0","message_id":"..."}' --json
+kch api release-task-claim --input '{"team_name":"...","task_id":"1","claim_token":"..."}' --json
+kch api read-task --input '{"team_name":"...","task_id":"1"}' --json
+kch api list-tasks --input '{"team_name":"..."}' --json
+kch api create-task --input '{"team_name":"...","subject":"...","description":"..."}' --json
 ```
 
-### `kh hud --team <name> --watch`
+### `kch hud --team <name> --watch`
 
 Live terminal dashboard showing team state, worker status, task progress, and dispatch stats.
 
 ```bash
-kh hud --team my-team-123456 --watch
-kh hud --team my-team-123456 --watch --interval 1000
+kch hud --team my-team-123456 --watch
+kch hud --team my-team-123456 --watch --interval 1000
 ```
 
-### `kh doctor`
+### `kch doctor`
 
 Check that all prerequisites are installed and accessible.
 
@@ -234,13 +234,13 @@ Check that all prerequisites are installed and accessible.
 | `KT_DEFAULT_MODEL` | Default model for all workers | kiro-cli default |
 | `KT_WORKER_MODEL` | Override model specifically for workers | `KT_DEFAULT_MODEL` |
 | `KT_REASONING_EFFORT` | Reasoning effort: `low`, `medium`, `high` | kiro-cli default |
-| `KT_STATE_ROOT` | Override state directory | `~/.kh` |
+| `KCH_STATE_ROOT` | Override state directory | `~/.kch` |
 | `KT_TEAM` | (set automatically) Team name for worker processes | — |
 | `KT_WORKER` | (set automatically) Worker name for worker processes | — |
 
 **Example — low-token workers:**
 ```bash
-KT_WORKER_MODEL=claude-sonnet KT_REASONING_EFFORT=low kh team 3:executor "Quick analysis task"
+KT_WORKER_MODEL=claude-sonnet KT_REASONING_EFFORT=low kch team 3:executor "Quick analysis task"
 ```
 
 ## Worker Roles
@@ -291,7 +291,7 @@ exec ──→ verify ──→ complete
 
 ## State Directory
 
-All team state lives in `~/.kh/teams/<team-name>/`:
+All team state lives in `~/.kch/teams/<team-name>/`:
 
 ```
 config.json          # Team configuration
@@ -317,13 +317,13 @@ File-based IPC with directory-based locks ensures safe concurrent access from mu
 
 ## Comparison with omx
 
-`kh` is directly inspired by [oh-my-codex (omx)](https://github.com/Yeachan-Heo/oh-my-codex). Key differences:
+`kch` is directly inspired by [oh-my-codex (omx)](https://github.com/Yeachan-Heo/oh-my-codex). Key differences:
 
-| | omx | kh |
+| | omx | kch |
 |---|---|---|
 | Wraps | OpenAI Codex CLI | kiro-cli |
 | State backend | MCP servers | File-based IPC |
-| Worker comms | MCP protocol | `kh api` CLI + file writes |
+| Worker comms | MCP protocol | `kch api` CLI + file writes |
 | Phases | plan → exec → verify | exec → verify → fix |
 | Worker CLI | `codex` | `kiro-cli chat` |
 

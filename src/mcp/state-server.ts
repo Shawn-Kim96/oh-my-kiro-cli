@@ -3,13 +3,61 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { readFile, writeFile, readdir, mkdir, unlink } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
 import { autoStartStdioMcpServer } from './bootstrap.js';
+import { ktStateDir } from '../utils/paths.js';
 
 const SUPPORTED_MODES = ['team', 'ralph', 'plan'] as const;
 
+const stateTools = [
+  {
+    name: 'kch_state_read',
+    description: 'Read mode state.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: { mode: { type: 'string', enum: [...SUPPORTED_MODES] } },
+      required: ['mode'],
+    },
+  },
+  {
+    name: 'kch_state_write',
+    description: 'Write/update mode state.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        mode: { type: 'string', enum: [...SUPPORTED_MODES] },
+        state: { type: 'object', description: 'State fields to merge' },
+      },
+      required: ['mode', 'state'],
+    },
+  },
+  {
+    name: 'kch_state_clear',
+    description: 'Clear state for a mode.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: { mode: { type: 'string', enum: [...SUPPORTED_MODES] } },
+      required: ['mode'],
+    },
+  },
+  {
+    name: 'kch_state_list',
+    description: 'List active states.',
+    inputSchema: { type: 'object' as const, properties: {} },
+  },
+];
+
+const legacyStateTools = stateTools.map(tool => ({
+  ...tool,
+  name: tool.name.replace(/^kch_/, 'kt_'),
+  description: `${tool.description} Compatibility alias for ${tool.name}.`,
+}));
+
+function normalizeStateToolName(name: string): string {
+  return name.startsWith('kt_') ? `kch_${name.slice(3)}` : name;
+}
+
 function stateDir(): string {
-  return join(homedir(), '.kt', 'state');
+  return join(ktStateDir(), 'state');
 }
 
 function statePath(mode: string): string {
@@ -18,59 +66,24 @@ function statePath(mode: string): string {
 
 function createStateServer(): Server {
   const server = new Server(
-    { name: 'kt-state-server', version: '0.1.0' },
+    { name: 'kch-state-server', version: '0.1.0' },
     { capabilities: { tools: {} } },
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [
-      {
-        name: 'kt_state_read',
-        description: 'Read mode state.',
-        inputSchema: {
-          type: 'object' as const,
-          properties: { mode: { type: 'string', enum: [...SUPPORTED_MODES] } },
-          required: ['mode'],
-        },
-      },
-      {
-        name: 'kt_state_write',
-        description: 'Write/update mode state.',
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            mode: { type: 'string', enum: [...SUPPORTED_MODES] },
-            state: { type: 'object', description: 'State fields to merge' },
-          },
-          required: ['mode', 'state'],
-        },
-      },
-      {
-        name: 'kt_state_clear',
-        description: 'Clear state for a mode.',
-        inputSchema: {
-          type: 'object' as const,
-          properties: { mode: { type: 'string', enum: [...SUPPORTED_MODES] } },
-          required: ['mode'],
-        },
-      },
-      {
-        name: 'kt_state_list',
-        description: 'List active states.',
-        inputSchema: { type: 'object' as const, properties: {} },
-      },
-    ],
+    tools: [...stateTools, ...legacyStateTools],
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
+    const { name: rawName, arguments: args } = request.params;
+    const name = normalizeStateToolName(rawName);
     const a = (args ?? {}) as Record<string, unknown>;
 
     try {
       await mkdir(stateDir(), { recursive: true });
 
       switch (name) {
-        case 'kt_state_read': {
+        case 'kch_state_read': {
           const mode = a['mode'] as string;
           const path = statePath(mode);
           if (!existsSync(path)) {
@@ -80,7 +93,7 @@ function createStateServer(): Server {
           return { content: [{ type: 'text' as const, text: data }] };
         }
 
-        case 'kt_state_write': {
+        case 'kch_state_write': {
           const mode = a['mode'] as string;
           const path = statePath(mode);
           let existing: Record<string, unknown> = {};
@@ -92,14 +105,14 @@ function createStateServer(): Server {
           return { content: [{ type: 'text' as const, text: JSON.stringify({ success: true, mode }) }] };
         }
 
-        case 'kt_state_clear': {
+        case 'kch_state_clear': {
           const mode = a['mode'] as string;
           const path = statePath(mode);
           if (existsSync(path)) await unlink(path);
           return { content: [{ type: 'text' as const, text: JSON.stringify({ cleared: true, mode }) }] };
         }
 
-        case 'kt_state_list': {
+        case 'kch_state_list': {
           const dir = stateDir();
           const active: string[] = [];
           if (existsSync(dir)) {

@@ -5,12 +5,15 @@ import { homedir } from 'os';
 import { existsSync } from 'fs';
 import { promisify } from 'util';
 import type { NotificationConfig, NotificationPayload } from './types.js';
+import { ktStateDir } from '../utils/paths.js';
 
 const execFileAsync = promisify(execFile);
 const TIMEOUT_MS = 10_000;
 
 export async function loadNotificationConfig(projectRoot?: string): Promise<NotificationConfig | null> {
-  const configPath = join(projectRoot ?? homedir(), '.kt', 'notifications.json');
+  const configPath = projectRoot
+    ? join(projectRoot, '.kch', 'notifications.json')
+    : join(ktStateDir(), 'notifications.json');
   if (!existsSync(configPath)) return null;
   try {
     return JSON.parse(await readFile(configPath, 'utf-8')) as NotificationConfig;
@@ -52,7 +55,7 @@ async function sendDiscordWebhook(url: string, payload: NotificationPayload): Pr
   const colorMap = { info: 3447003, success: 3066993, warning: 15105570, error: 15158332 };
   const body = JSON.stringify({
     embeds: [{
-      title: `[kt] ${payload.title}`,
+      title: `[kch] ${payload.title}`,
       description: payload.message,
       color: colorMap[payload.type],
       timestamp: new Date().toISOString(),
@@ -76,7 +79,7 @@ async function sendDiscordWebhook(url: string, payload: NotificationPayload): Pr
 }
 
 async function sendTelegramMessage(botToken: string, chatId: string, payload: NotificationPayload): Promise<void> {
-  const text = `*[kt] ${payload.title}*\n${payload.message}`;
+  const text = `*[kch] ${payload.title}*\n${payload.message}`;
   const body = JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' });
 
   try {
@@ -95,7 +98,7 @@ async function sendTelegramMessage(botToken: string, chatId: string, payload: No
 }
 
 async function sendSlackWebhook(url: string, payload: NotificationPayload): Promise<void> {
-  const body = JSON.stringify({ text: `[kt] ${payload.title}: ${payload.message}` });
+  const body = JSON.stringify({ text: `[kch] ${payload.title}: ${payload.message}` });
 
   try {
     const parsed = new URL(url);

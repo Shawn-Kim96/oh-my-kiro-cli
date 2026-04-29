@@ -1,6 +1,6 @@
 # Future: Prompt Mode (Non-tmux Workers)
 
-This document describes a future worker execution mode that doesn't require tmux, enabling kt to run in CI/CD pipelines, containers, and headless environments.
+This document describes a future worker execution mode that doesn't require tmux, enabling kch to run in CI/CD pipelines, containers, and headless environments.
 
 ## Motivation
 
@@ -77,7 +77,7 @@ For tasks that require multiple turns (e.g., claim → work → complete), promp
 ```bash
 #!/bin/bash
 # Worker wrapper for prompt mode
-STATE_ROOT=$KT_STATE_ROOT
+STATE_ROOT=$KCH_STATE_ROOT
 TEAM=$KT_TEAM
 WORKER=$KT_WORKER
 
@@ -100,16 +100,16 @@ echo '{"state":"done","current_task_id":null,"reason":null}' > \
 | Pane capture for readiness | Process spawn = ready |
 | `isPaneAlive()` | `process.kill(pid, 0)` |
 | Interactive multi-turn | Single invocation per task |
-| `kt api` from within session | Pre/post hooks in wrapper script |
+| `kch api` from within session | Pre/post hooks in wrapper script |
 
 ### Configuration
 
 ```bash
 # Use prompt mode
-KT_WORKER_BACKEND=prompt kt team 2:executor "task"
+KT_WORKER_BACKEND=prompt kch team 2:executor "task"
 
 # Or via CLI flag
-kt team 2:executor "task" --backend prompt
+kch team 2:executor "task" --backend prompt
 ```
 
 ## Migration Path
@@ -117,7 +117,7 @@ kt team 2:executor "task" --backend prompt
 1. Extract a `WorkerBackend` interface from current tmux-specific code
 2. Implement `TmuxBackend` wrapping existing functions (no behavior change)
 3. Implement `PromptBackend` using child processes
-4. Add `--backend` flag to `kt team`
+4. Add `--backend` flag to `kch team`
 5. Wait for kiro-cli `--no-interactive` support
 
 ## Limitations

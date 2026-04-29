@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -16,26 +17,54 @@ import { splitTaskString } from '../team/task-decomposer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const kchBin = join(__dirname, '..', '..', 'bin', 'kch.js');
+const khBin = join(__dirname, '..', '..', 'bin', 'kh.js');
 const ktBin = join(__dirname, '..', '..', 'bin', 'kt.js');
+const packageJsonPath = join(__dirname, '..', '..', 'package.json');
 
 // ── CLI integration ──
 
 describe('CLI integration', () => {
-  it('kt --help prints usage', () => {
-    const out = execFileSync('node', [ktBin, '--help'], { encoding: 'utf8' });
-    assert.ok(out.includes('Usage:'), 'Should contain Usage:');
+  it('kch --help prints usage', () => {
+    const out = execFileSync('node', [kchBin, '--help'], { encoding: 'utf8' });
+    assert.ok(out.includes('Usage: kch'), 'Should contain kch usage');
     assert.ok(out.includes('team'), 'Should list team command');
     assert.ok(out.includes('doctor'), 'Should list doctor command');
   });
 
-  it('kt --version prints 0.1.0', () => {
-    const out = execFileSync('node', [ktBin, '--version'], { encoding: 'utf8' });
+  it('kch --version prints 0.1.0', () => {
+    const out = execFileSync('node', [kchBin, '--version'], { encoding: 'utf8' });
     assert.ok(out.trim().includes('0.1.0'), `Expected 0.1.0, got: ${out.trim()}`);
   });
 
-  it('kt team --help prints team usage', () => {
-    const out = execFileSync('node', [ktBin, 'team', '--help'], { encoding: 'utf8' });
+  it('kch team --help prints team usage', () => {
+    const out = execFileSync('node', [kchBin, 'team', '--help'], { encoding: 'utf8' });
     assert.ok(out.includes('task'), 'Should mention task argument');
+  });
+
+  it('kch operator commands expose help', () => {
+    for (const command of ['setup', 'cleanup', 'cancel', 'trace', 'explore']) {
+      const out = execFileSync('node', [kchBin, command, '--help'], { encoding: 'utf8' });
+      assert.ok(out.includes('Usage:'), `${command} should print usage`);
+    }
+  });
+
+  it('kh and kt compatibility aliases print kch usage', () => {
+    for (const bin of [khBin, ktBin]) {
+      const out = execFileSync('node', [bin, '--help'], { encoding: 'utf8' });
+      assert.ok(out.includes('Usage: kch'), `Expected kch usage from ${bin}`);
+    }
+  });
+
+  it('package exposes kch primary and kh/kt compatibility bins', () => {
+    const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf-8')) as { name: string; bin: Record<string, string> };
+    assert.equal(pkg.name, 'kiro-cli-hive');
+    assert.equal(pkg.bin['kch'], './bin/kch.js');
+    assert.equal(pkg.bin['kh'], './bin/kh.js');
+    assert.equal(pkg.bin['kt'], './bin/kt.js');
+    for (const rel of Object.values(pkg.bin)) {
+      assert.equal(existsSync(join(__dirname, '..', '..', rel)), true, `${rel} should exist`);
+    }
   });
 });
 
@@ -206,7 +235,17 @@ import { assessOutput } from '../team/quality-gate.js';
 import { staleLockThreshold, withFileLock } from '../team/state/locks.js';
 import { inferPhaseFromTaskCounts } from '../team/phase-controller.js';
 import { tmpdir } from 'os';
-import { mkdir, rm } from 'fs/promises';
+import { mkdtemp, rm } from 'fs/promises';
+import { kchStateDir, ktStateDir } from '../utils/paths.js';
+import type { TeamConfig } from '../team/contracts.js';
+import {
+  initTeamState, createTask, readTask, claimTask, transitionTaskStatus,
+  recordTaskQualityResult, readPhaseState, writePhaseState,
+} from '../team/state.js';
+import { handleApiOperation } from '../team/api-interop.js';
+import { generateWorkerInbox } from '../team/worker-bootstrap.js';
+import { latestTeamName } from '../cli/team-select.js';
+import { findCleanupCandidates } from '../cli/cleanup.js';
 
 // ── Quality Gate ──
 
@@ -259,6 +298,238 @@ describe('assessOutput', () => {
   });
 });
 
+// ── State root identity ──
+
+describe('kch state root resolution', () => {
+  const original = {
+    KCH_STATE_ROOT: process.env['KCH_STATE_ROOT'],
+    KT_STATE_ROOT: process.env['KT_STATE_ROOT'],
+    KH_STATE_ROOT: process.env['KH_STATE_ROOT'],
+  };
+
+  function restoreEnv(): void {
+    for (const key of Object.keys(original) as Array<keyof typeof original>) {
+      const value = original[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+
+  it('prefers KCH_STATE_ROOT over legacy aliases', () => {
+    process.env['KCH_STATE_ROOT'] = '/tmp/kch-primary';
+    process.env['KT_STATE_ROOT'] = '/tmp/kt-legacy';
+    process.env['KH_STATE_ROOT'] = '/tmp/kh-legacy';
+    assert.equal(kchStateDir(), '/tmp/kch-primary');
+    assert.equal(ktStateDir(), '/tmp/kch-primary');
+    restoreEnv();
+  });
+
+  it('falls back to KT_STATE_ROOT then KH_STATE_ROOT', () => {
+    delete process.env['KCH_STATE_ROOT'];
+    process.env['KT_STATE_ROOT'] = '/tmp/kt-legacy';
+    process.env['KH_STATE_ROOT'] = '/tmp/kh-legacy';
+    assert.equal(kchStateDir(), '/tmp/kt-legacy');
+
+    delete process.env['KT_STATE_ROOT'];
+    assert.equal(kchStateDir(), '/tmp/kh-legacy');
+    restoreEnv();
+  });
+});
+
+function testTeamConfig(name: string, stateRoot: string): TeamConfig {
+  return {
+    name,
+    task: 'implement authentication module',
+    agent_type: 'executor',
+    worker_count: 1,
+    max_workers: 1,
+    workers: [{
+      name: 'worker-0',
+      index: 0,
+      role: 'executor',
+      agent: 'yolo-general',
+      pane_id: null,
+      assigned_tasks: [],
+      worker_cli: 'kiro-cli',
+    }],
+    created_at: new Date().toISOString(),
+    tmux_target: '',
+    leader_pane_id: null,
+    hud_pane_id: null,
+    next_task_id: 1,
+    next_worker_index: 1,
+    leader_cwd: process.cwd(),
+    team_state_root: stateRoot,
+  };
+}
+
+async function withTempStateRoot<T>(fn: (stateRoot: string, teamName: string) => Promise<T>): Promise<T> {
+  const oldKch = process.env['KCH_STATE_ROOT'];
+  const oldKt = process.env['KT_STATE_ROOT'];
+  const oldKh = process.env['KH_STATE_ROOT'];
+  const stateRoot = await mkdtemp(join(tmpdir(), 'kch-state-'));
+  const teamName = `team-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+  process.env['KCH_STATE_ROOT'] = stateRoot;
+  delete process.env['KT_STATE_ROOT'];
+  delete process.env['KH_STATE_ROOT'];
+  try {
+    await initTeamState(testTeamConfig(teamName, stateRoot));
+    return await fn(stateRoot, teamName);
+  } finally {
+    if (oldKch === undefined) delete process.env['KCH_STATE_ROOT']; else process.env['KCH_STATE_ROOT'] = oldKch;
+    if (oldKt === undefined) delete process.env['KT_STATE_ROOT']; else process.env['KT_STATE_ROOT'] = oldKt;
+    if (oldKh === undefined) delete process.env['KH_STATE_ROOT']; else process.env['KH_STATE_ROOT'] = oldKh;
+    await rm(stateRoot, { recursive: true, force: true });
+  }
+}
+
+// ── Worker API protocol ──
+
+describe('worker task API protocol', () => {
+  it('requires expected_version for claim-task API calls', async () => {
+    await withTempStateRoot(async (_stateRoot, teamName) => {
+      const task = await createTask(teamName, { subject: 'implement auth', description: 'implement authentication module' });
+      const result = await handleApiOperation('claim-task', {
+        team_name: teamName,
+        task_id: task.id,
+        worker: 'worker-0',
+      });
+      assert.equal(result.ok, false);
+      assert.match(result.error ?? '', /expected_version is required/);
+    });
+  });
+
+  it('claims and transitions only with the returned claim token', async () => {
+    await withTempStateRoot(async (_stateRoot, teamName) => {
+      const task = await createTask(teamName, { subject: 'implement auth', description: 'implement authentication module' });
+      const claim = await claimTask(teamName, task.id, 'worker-0', task.version);
+      assert.equal(claim.ok, true);
+      assert.ok(claim.claim_token);
+
+      const missing = await transitionTaskStatus(teamName, task.id, 'in_progress', 'completed', '', { result: 'Implemented authentication module.' });
+      assert.equal(missing.ok, false);
+      assert.equal(missing.error, 'missing_claim_token');
+
+      const wrong = await transitionTaskStatus(teamName, task.id, 'in_progress', 'completed', 'wrong-token', { result: 'Implemented authentication module.' });
+      assert.equal(wrong.ok, false);
+      assert.equal(wrong.error, 'invalid_claim_token');
+
+      const ok = await transitionTaskStatus(teamName, task.id, 'in_progress', 'completed', claim.claim_token!, { result: 'Implemented authentication module with tests.' });
+      assert.equal(ok.ok, true);
+
+      const completed = await readTask(teamName, task.id);
+      assert.equal(completed?.status, 'completed');
+      assert.equal(completed?.claim_token, null);
+    });
+  });
+
+  it('refuses claim by a worker that does not own the assigned task', async () => {
+    await withTempStateRoot(async (_stateRoot, teamName) => {
+      const task = await createTask(teamName, {
+        subject: 'implement auth',
+        description: 'implement authentication module',
+        owner: 'worker-0',
+      });
+      const claim = await claimTask(teamName, task.id, 'worker-1', task.version);
+      assert.equal(claim.ok, false);
+      assert.match(claim.error ?? '', /task_owned_by:worker-0/);
+    });
+  });
+
+  it('records quality gate failure on completed tasks', async () => {
+    await withTempStateRoot(async (_stateRoot, teamName) => {
+      const task = await createTask(teamName, { subject: 'implement auth', description: 'implement authentication module' });
+      const claim = await claimTask(teamName, task.id, 'worker-0', task.version);
+      assert.equal(claim.ok, true);
+      await transitionTaskStatus(teamName, task.id, 'in_progress', 'completed', claim.claim_token!, { result: 'weather report' });
+
+      const quality = await recordTaskQualityResult(teamName, task.id, { pass: false, issues: ['Low keyword overlap'] });
+      assert.equal(quality.ok, true);
+
+      const failed = await readTask(teamName, task.id);
+      assert.equal(failed?.status, 'failed');
+      assert.equal(failed?.quality_checked, true);
+      assert.equal(failed?.quality_passed, false);
+      assert.match(failed?.error ?? '', /quality_gate/);
+    });
+  });
+});
+
+describe('phase persistence', () => {
+  it('writes and reads phase state', async () => {
+    await withTempStateRoot(async (_stateRoot, teamName) => {
+      const phase = await readPhaseState(teamName);
+      assert.equal(phase?.current_phase, 'exec');
+      assert.ok(phase);
+      await writePhaseState(teamName, { ...phase, current_phase: 'verify', updated_at: new Date().toISOString() });
+      const updated = await readPhaseState(teamName);
+      assert.equal(updated?.current_phase, 'verify');
+    });
+  });
+});
+
+describe('latest team selection', () => {
+  it('uses config.created_at instead of lexical team name', async () => {
+    await withTempStateRoot(async (stateRoot) => {
+      await initTeamState({
+        ...testTeamConfig('z-old', stateRoot),
+        name: 'z-old',
+        created_at: '2026-01-01T00:00:00.000Z',
+      });
+      await initTeamState({
+        ...testTeamConfig('a-new', stateRoot),
+        name: 'a-new',
+        created_at: '2099-01-02T00:00:00.000Z',
+      });
+      assert.equal(await latestTeamName(), 'a-new');
+    });
+  });
+});
+
+describe('cleanup safety', () => {
+  it('does not classify active lock directories as cleanup candidates', async () => {
+    await withTempStateRoot(async (stateRoot, teamName) => {
+      mkdirSync(join(stateRoot, 'teams', teamName, '.locks'), { recursive: true });
+      const candidates = await findCleanupCandidates(stateRoot);
+      assert.equal(candidates.some(c => c.path.includes(teamName)), false);
+    });
+  });
+});
+
+describe('worker bootstrap protocol', () => {
+  it('contains kch API, expected_version, claim_token, and no unconditional git commit', () => {
+    const inbox = generateWorkerInbox({
+      teamName: 'team-1',
+      workerName: 'worker-0',
+      role: 'executor',
+      agent: 'yolo-general',
+      tasks: [{ id: '1', subject: 'implement auth', description: 'implement authentication module', status: 'pending' }],
+      stateRoot: '/tmp/kch',
+      leaderCwd: '/repo',
+    });
+
+    assert.match(inbox, /kch api claim-task/);
+    assert.match(inbox, /expected_version/);
+    assert.match(inbox, /claim_token/);
+    assert.doesNotMatch(inbox, /git add -A && git commit/);
+  });
+});
+
+describe('skill catalog', () => {
+  it('has valid frontmatter for every skill', () => {
+    const skillsDir = join(__dirname, '..', '..', 'skills');
+    const skillDirs = readdirSync(skillsDir, { withFileTypes: true }).filter(e => e.isDirectory());
+    assert.ok(skillDirs.length >= 8, 'Expected kch workflow skills');
+
+    for (const dirent of skillDirs) {
+      const path = join(skillsDir, dirent.name, 'SKILL.md');
+      assert.equal(existsSync(path), true, `${dirent.name} should have SKILL.md`);
+      const content = readFileSync(path, 'utf-8');
+      assert.match(content, /^---\nname: .+\ndescription: .+\n---/m, `${dirent.name} should have frontmatter`);
+    }
+  });
+});
+
 // ── staleLockThreshold ──
 
 describe('staleLockThreshold', () => {
@@ -268,12 +539,12 @@ describe('staleLockThreshold', () => {
   });
 
   it('returns 30000 for task locks (no worker mapping)', async () => {
-    const t = await staleLockThreshold('/home/user/.kt/teams/myteam/.locks/task-1');
+    const t = await staleLockThreshold('/home/user/.kch/teams/myteam/.locks/task-1');
     assert.equal(t, 30_000);
   });
 
   it('returns 30000 when heartbeat file missing', async () => {
-    const t = await staleLockThreshold('/home/user/.kt/teams/nonexistent/.locks/mailbox-worker-0');
+    const t = await staleLockThreshold('/home/user/.kch/teams/nonexistent/.locks/mailbox-worker-0');
     assert.equal(t, 30_000);
   });
 });
@@ -281,7 +552,7 @@ describe('staleLockThreshold', () => {
 // ── withFileLock ──
 
 describe('withFileLock', () => {
-  const lockBase = join(tmpdir(), `kt-test-locks-${Date.now()}`);
+  const lockBase = join(tmpdir(), `kch-test-locks-${Date.now()}`);
 
   it('executes function and returns result', async () => {
     const lockPath = join(lockBase, 'test-exec');
@@ -491,10 +762,10 @@ import { resolveModelRouteFlags } from '../config/model-contract.js';
 // ── Auto-checkpoint ──
 
 describe('autoCheckpoint', () => {
-  it('skips when not a git repo', async () => {
+  it('skips unless explicitly enabled', async () => {
     const r = await autoCheckpoint('/tmp', 'exec', 'verify', 'test-team');
     assert.equal(r.skipped, true);
-    assert.ok(r.reason.includes('not a git'));
+    assert.ok(r.reason.includes('disabled'));
   });
 });
 

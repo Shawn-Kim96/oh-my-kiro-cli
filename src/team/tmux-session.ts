@@ -229,7 +229,9 @@ export function spawnWorkerPane(options: SpawnWorkerOptions): string {
   const envParts = [
     `KT_TEAM=${options.teamName}`,
     `KT_WORKER=${options.workerName}`,
+    `KCH_STATE_ROOT=${stateRoot}`,
     `KT_STATE_ROOT=${stateRoot}`,
+    `KH_STATE_ROOT=${stateRoot}`,
   ];
   if (options.env) {
     for (const [k, v] of Object.entries(options.env)) {

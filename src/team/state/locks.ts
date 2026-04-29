@@ -1,7 +1,6 @@
 import { mkdir, rmdir, stat, readFile } from 'fs/promises';
 import { join, dirname } from 'path';
-import { homedir } from 'os';
-import { ktTeamDir } from '../../utils/paths.js';
+import { ktStateDir, ktTeamDir } from '../../utils/paths.js';
 import { sleep } from '../../utils/sleep.js';
 
 const STALE_THRESHOLD_MS = 30_000;
@@ -9,7 +8,7 @@ const POLL_INTERVAL_MS = 100;
 
 export async function staleLockThreshold(lockPath: string): Promise<number> {
   try {
-    // lockPath is ~/.kt/teams/{teamName}/.locks/{lockName}
+    // lockPath is <state-root>/teams/{teamName}/.locks/{lockName}
     const parts = lockPath.split('/');
     const locksIdx = parts.indexOf('.locks');
     if (locksIdx < 1) return STALE_THRESHOLD_MS;
@@ -31,7 +30,7 @@ export async function staleLockThreshold(lockPath: string): Promise<number> {
 
     if (!workerName) return STALE_THRESHOLD_MS;
 
-    const heartbeatPath = join(homedir(), '.kt', 'teams', teamName, 'workers', workerName, 'heartbeat.json');
+    const heartbeatPath = join(ktStateDir(), 'teams', teamName, 'workers', workerName, 'heartbeat.json');
     const raw = await readFile(heartbeatPath, 'utf-8');
     const hb = JSON.parse(raw) as { last_seen?: string };
     if (!hb.last_seen) return STALE_THRESHOLD_MS;

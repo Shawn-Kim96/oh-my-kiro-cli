@@ -12,6 +12,12 @@ const num = (v: unknown, fallback: number): number => {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
 };
+const requiredVersion = (v: unknown): { ok: true; value: number } | { ok: false; error: string } => {
+  if (v === undefined || v === null || v === '') return { ok: false, error: 'expected_version is required' };
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 1) return { ok: false, error: 'expected_version must be a positive integer' };
+  return { ok: true, value: n };
+};
 
 const handlers: Record<string, (input: Record<string, unknown>) => Promise<ApiResult>> = {
   'send-message': async (input) => {
@@ -34,11 +40,13 @@ const handlers: Record<string, (input: Record<string, unknown>) => Promise<ApiRe
   },
 
   'claim-task': async (input) => {
+    const expectedVersion = requiredVersion(input['expected_version']);
+    if (!expectedVersion.ok) return { ok: false, error: expectedVersion.error };
     const result = await claimTask(
       str(input['team_name']), str(input['task_id']), str(input['worker']),
-      num(input['expected_version'], 1),
+      expectedVersion.value,
     );
-    if (!result.ok) return { ok: false, error: 'Task claim failed (wrong version, status, or not found)' };
+    if (!result.ok) return { ok: false, error: `Task claim failed: ${result.error ?? 'unknown'}` };
     return { ok: true, data: { claim_token: result.claim_token, version: result.version } };
   },
 
@@ -49,7 +57,7 @@ const handlers: Record<string, (input: Record<string, unknown>) => Promise<ApiRe
       str(input['claim_token']),
       { result: input['result'] as string | undefined, error: input['error'] as string | undefined },
     );
-    if (!result.ok) return { ok: false, error: 'Task transition failed (invalid state, token, or transition)' };
+    if (!result.ok) return { ok: false, error: `Task transition failed: ${result.error ?? 'unknown'}` };
     return { ok: true };
   },
 
@@ -57,7 +65,7 @@ const handlers: Record<string, (input: Record<string, unknown>) => Promise<ApiRe
     const result = await releaseTaskClaim(
       str(input['team_name']), str(input['task_id']), str(input['claim_token']),
     );
-    if (!result.ok) return { ok: false, error: 'Release claim failed (wrong token or not found)' };
+    if (!result.ok) return { ok: false, error: `Release claim failed: ${result.error ?? 'unknown'}` };
     return { ok: true };
   },
 

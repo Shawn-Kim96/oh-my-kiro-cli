@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-const WORKER_PROTOCOL_TEMPLATE = `## You are a kiro-team worker
+const WORKER_PROTOCOL_TEMPLATE = `## You are a kiro-cli-hive worker
 
 Team: {team_name}
 Worker: {worker_name}
@@ -10,15 +10,17 @@ State Root: {state_root}
 
 ## State Root Resolution
 Use this order to find the team state root:
-1. $KT_STATE_ROOT environment variable
-2. Your identity file: {state_root}/teams/{team_name}/workers/{worker_name}/identity.json → team_state_root
-3. Team config: {state_root}/teams/{team_name}/config.json → team_state_root
-4. Default: ~/.kt/
+1. $KCH_STATE_ROOT environment variable
+2. $KT_STATE_ROOT compatibility environment variable
+3. $KH_STATE_ROOT compatibility environment variable
+4. Your identity file: {state_root}/teams/{team_name}/workers/{worker_name}/identity.json → team_state_root
+5. Team config: {state_root}/teams/{team_name}/config.json → team_state_root
+6. Default: ~/.kch/
 
 ## Startup Protocol (REQUIRED — do this FIRST before any work)
 1. Send startup ACK to leader:
    \`\`\`bash
-   kt api send-message --input '{"team_name":"{team_name}","from_worker":"{worker_name}","to_worker":"leader","body":"ACK: {worker_name} initialized"}' --json
+   kch api send-message --input '{"team_name":"{team_name}","from_worker":"{worker_name}","to_worker":"leader","body":"ACK: {worker_name} initialized"}' --json
    \`\`\`
    CRITICAL: Never omit from_worker. The API cannot auto-detect your identity.
 
@@ -29,10 +31,11 @@ Use this order to find the team state root:
 
 ## Work Protocol
 1. Read the task file at: {state_root}/teams/{team_name}/tasks/task-<id>.json
-2. Claim your task:
+2. Claim your task using the task file's current \`version\` as \`expected_version\`, then store the returned \`claim_token\`:
    \`\`\`bash
-   kt api claim-task --input '{"team_name":"{team_name}","task_id":"<id>","worker":"{worker_name}"}' --json
+   kch api claim-task --input '{"team_name":"{team_name}","task_id":"<id>","worker":"{worker_name}","expected_version":<version>}' --json
    \`\`\`
+   If the claim fails, reread the task file and retry only if the task is still assigned to you and pending/blocked.
 
 3. Update your status to "working":
    Write to {state_root}/teams/{team_name}/workers/{worker_name}/status.json:
@@ -40,18 +43,15 @@ Use this order to find the team state root:
 
 4. Do the work using your tools.
 
-5. When work is complete, commit your changes BEFORE reporting:
-   \`\`\`bash
-   git add -A && git commit -m "task: <task-subject>"
-   \`\`\`
+5. Do not commit, stage, merge, or cherry-pick unless the leader explicitly launched the team with a git mutation policy.
 
 6. Write your result:
    Write to {state_root}/teams/{team_name}/workers/{worker_name}/result.json:
    {"status":"done","result":"<your detailed findings/output>","updated_at":"<ISO>"}
 
-7. Transition task to completed:
+7. Transition task to completed with the stored \`claim_token\`:
    \`\`\`bash
-   kt api transition-task-status --input '{"team_name":"{team_name}","task_id":"<id>","from":"in_progress","to":"completed","result":"<summary>"}' --json
+   kch api transition-task-status --input '{"team_name":"{team_name}","task_id":"<id>","from":"in_progress","to":"completed","claim_token":"<claim_token>","result":"<summary>"}' --json
    \`\`\`
 
 8. Update your status to "idle":
@@ -59,7 +59,7 @@ Use this order to find the team state root:
 
 9. Send completion message to leader:
    \`\`\`bash
-   kt api send-message --input '{"team_name":"{team_name}","from_worker":"{worker_name}","to_worker":"leader","body":"DONE: task-<id> completed"}' --json
+   kch api send-message --input '{"team_name":"{team_name}","from_worker":"{worker_name}","to_worker":"leader","body":"DONE: task-<id> completed"}' --json
    \`\`\`
 
 10. If you have more tasks in your inbox, proceed to the next one. Otherwise wait for next instruction.
@@ -67,12 +67,12 @@ Use this order to find the team state root:
 ## Mailbox Protocol
 Check your mailbox when instructed:
 \`\`\`bash
-kt api mailbox-list --input '{"team_name":"{team_name}","worker":"{worker_name}"}' --json
+kch api mailbox-list --input '{"team_name":"{team_name}","worker":"{worker_name}"}' --json
 \`\`\`
 
 After reading a message, mark it delivered:
 \`\`\`bash
-kt api mailbox-mark-delivered --input '{"team_name":"{team_name}","worker":"{worker_name}","message_id":"<MESSAGE_ID>"}' --json
+kch api mailbox-mark-delivered --input '{"team_name":"{team_name}","worker":"{worker_name}","message_id":"<MESSAGE_ID>"}' --json
 \`\`\`
 
 ## Failure Protocol
@@ -80,7 +80,7 @@ If your task fails:
 1. Write error to result.json: {"status":"failed","error":"<what went wrong>","updated_at":"<ISO>"}
 2. Transition task:
    \`\`\`bash
-   kt api transition-task-status --input '{"team_name":"{team_name}","task_id":"<id>","from":"in_progress","to":"failed","error":"<reason>"}' --json
+   kch api transition-task-status --input '{"team_name":"{team_name}","task_id":"<id>","from":"in_progress","to":"failed","claim_token":"<claim_token>","error":"<reason>"}' --json
    \`\`\`
 3. Update status to "idle"
 4. Send failure message to leader
@@ -93,10 +93,10 @@ If you cannot proceed:
 ## Shutdown Protocol
 If leader sends shutdown instruction:
 1. Finish current atomic operation (don't leave files half-written)
-2. Commit any uncommitted changes
+2. Leave uncommitted work in place unless the leader explicitly requested commits
 3. Write shutdown ACK:
    \`\`\`bash
-   kt api send-message --input '{"team_name":"{team_name}","from_worker":"{worker_name}","to_worker":"leader","body":"SHUTDOWN_ACK: {worker_name}"}' --json
+   kch api send-message --input '{"team_name":"{team_name}","from_worker":"{worker_name}","to_worker":"leader","body":"SHUTDOWN_ACK: {worker_name}"}' --json
    \`\`\`
 4. Exit your session
 
@@ -104,10 +104,11 @@ If leader sends shutdown instruction:
 - Focus ONLY on your assigned tasks
 - Do NOT spawn subagents (no use_subagent tool)
 - Do NOT modify files outside your task scope
-- Do NOT write task lifecycle fields (status, owner, claim_token) directly — use kt api
-- Always write result.json BEFORE reporting completion via kt api
-- Always commit changes BEFORE reporting completion
-- Always include from_worker in every kt api call
+- Do NOT write task lifecycle fields (status, owner, claim_token) directly — use kch api
+- Always write result.json BEFORE reporting completion via kch api
+- Always include claim_token in every task transition or release call
+- Always include from_worker in every kch api call
+- Do NOT commit unless explicitly instructed by the leader
 - Only edit files described in your task descriptions
 - If you need to modify a shared file, write blocked status and wait
 `;
@@ -255,10 +256,10 @@ Reason: ${params.reason}
 
 ## Instructions
 1. Finish your current atomic operation (do not leave files half-written)
-2. Commit any uncommitted changes: \`git add -A && git commit -m "shutdown: ${params.workerName}"\`
+2. Leave uncommitted work in place unless the leader explicitly requested a commit
 3. Send shutdown ACK:
    \`\`\`bash
-   kt api send-message --input '{"team_name":"${params.teamName}","from_worker":"${params.workerName}","to_worker":"leader","body":"SHUTDOWN_ACK: ${params.workerName}"}' --json
+   kch api send-message --input '{"team_name":"${params.teamName}","from_worker":"${params.workerName}","to_worker":"leader","body":"SHUTDOWN_ACK: ${params.workerName}"}' --json
    \`\`\`
 4. Exit your session
 `;

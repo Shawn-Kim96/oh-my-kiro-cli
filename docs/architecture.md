@@ -2,18 +2,18 @@
 
 ## System Overview
 
-kiro-team has three planes:
+kiro-cli-hive has three planes:
 
 - **Execution plane** — kiro-cli agents running in tmux panes, doing the actual work
-- **Control plane** — the `kt` leader process that spawns workers, dispatches tasks, monitors health, and manages lifecycle
-- **State plane** — file-based IPC under `~/.kt/` that all processes read and write
+- **Control plane** — the `kch` leader process that spawns workers, dispatches tasks, monitors health, and manages lifecycle
+- **State plane** — file-based IPC under `~/.kch/` that all processes read and write
 
 ```
 ┌─ Control Plane ──────────────────────────────────────────────┐
 │                                                              │
-│  kt team 2:executor "task"                                   │
+│  kch team 2:executor "task"                                   │
 │    │                                                         │
-│    ├─ initTeamState()     → create ~/.kt/teams/<name>/       │
+│    ├─ initTeamState()     → create ~/.kch/teams/<name>/       │
 │    ├─ createTeamSession() → spawn tmux panes                 │
 │    ├─ generateWorkerInbox() → write inbox.md per worker      │
 │    ├─ queueInboxInstruction() → dispatch via send-keys       │
@@ -24,7 +24,7 @@ kiro-team has three planes:
          ▼                             ▼
 ┌─ Execution Plane ────────┐  ┌─ State Plane ─────────────────┐
 │                          │  │                                │
-│  ┌────────────────────┐  │  │  ~/.kt/teams/<team>/           │
+│  ┌────────────────────┐  │  │  ~/.kch/teams/<team>/           │
 │  │ worker-0 (pane)    │  │  │  ├── config.json               │
 │  │ kiro-cli chat      │──┼──│  ├── phase.json                │
 │  │ --agent yolo-gen   │  │  │  ├── events.jsonl              │
@@ -61,11 +61,11 @@ The leader cannot write directly into a kiro-cli session's context. Instead:
 
 This is managed by the dispatch queue (`dispatch/requests.json`) which handles deduplication, retries, and failure tracking.
 
-### 2. Worker → Leader: `kt api` CLI + file writes
+### 2. Worker → Leader: `kch api` CLI + file writes
 
 Workers communicate back through two mechanisms:
 
-- **`kt api` CLI** — for structured operations: `claim-task`, `transition-task-status`, `send-message`, etc. These go through the `handleApiOperation()` function with proper locking.
+- **`kch api` CLI** — for structured operations: `claim-task`, `transition-task-status`, `send-message`, etc. These go through the `handleApiOperation()` function with proper locking.
 - **Direct file writes** — for status updates: workers write `status.json`, `result.json`, and `heartbeat.json` directly.
 
 ### Message Flow Example
@@ -77,14 +77,14 @@ Leader                          Worker-0                    State Files
   ├─ enqueueDispatchRequest() ────────────────────────────────→ dispatch/requests.json
   ├─ sendKeys(trigger) ──────────→ │                            │
   │                                ├─ reads inbox.md ←──────────┤
-  │                                ├─ kt api send-message ────→ mailbox/leader.json (ACK)
-  │                                ├─ kt api claim-task ──────→ tasks/task-1.json
+  │                                ├─ kch api send-message ────→ mailbox/leader.json (ACK)
+  │                                ├─ kch api claim-task ──────→ tasks/task-1.json
   │                                ├─ writes status.json ─────→ workers/worker-0/status.json
   │                                │  (does work...)            │
   │                                ├─ writes result.json ─────→ workers/worker-0/result.json
-  │                                ├─ kt api transition ──────→ tasks/task-1.json (completed)
+  │                                ├─ kch api transition ──────→ tasks/task-1.json (completed)
   │                                ├─ writes status.json ─────→ (idle)
-  │                                ├─ kt api send-message ────→ mailbox/leader.json (DONE)
+  │                                ├─ kch api send-message ────→ mailbox/leader.json (DONE)
   │                                │                            │
   ├─ monitorTeam() polls ─────────────────────────────────────← tasks/, workers/
   ├─ detects all terminal ─────→ exits                          │
@@ -113,9 +113,9 @@ Fix attempts are capped at `max_fix_attempts` (default: 3). Exceeding the cap au
 
 ## File-Based IPC Design
 
-All state is stored as JSON files under `~/.kt/`. This design was chosen over MCP servers (used by omx) for simplicity:
+All state is stored as JSON files under `~/.kch/`. This design was chosen over MCP servers (used by omx) for simplicity:
 
-- **No server process** — state survives leader crashes; `kt resume` reconnects
+- **No server process** — state survives leader crashes; `kch resume` reconnects
 - **Atomic writes** — all writes use tmp + rename pattern (`writeJson()` in `safe-json.ts`)
 - **Directory-based locks** — `mkdir` is atomic on POSIX; used for task claims, mailbox, dispatch, and scaling operations (`state/locks.ts`)
 - **Stale lock recovery** — locks older than 30s are automatically broken

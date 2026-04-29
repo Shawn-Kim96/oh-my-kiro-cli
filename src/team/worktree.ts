@@ -182,7 +182,7 @@ function resolveBranchName(input: WorktreePlanInput): string | null {
 function resolveWorktreePath(input: WorktreePlanInput, repoRoot: string): string {
   const teamName = sanitizePathToken(input.teamName ?? 'team');
   const workerName = sanitizePathToken(input.workerName ?? 'worker');
-  return join(repoRoot, '.kt', 'team', teamName, 'worktrees', workerName);
+  return join(repoRoot, '.kch', 'team', teamName, 'worktrees', workerName);
 }
 
 export function planWorktreeTarget(input: WorktreePlanInput): PlannedWorktreeTarget | { enabled: false } {
@@ -240,7 +240,7 @@ export function ensureWorktree(plan: PlannedWorktreeTarget | { enabled: false })
 export function autoCommitDirtyWorktree(worktreePath: string, workerName: string): boolean {
   if (!isWorktreeDirty(worktreePath)) return false;
   spawnSync('git', ['add', '-A'], { cwd: worktreePath, encoding: 'utf-8' });
-  const result = spawnSync('git', ['commit', '-m', `kt: auto-commit ${workerName} before merge`], { cwd: worktreePath, encoding: 'utf-8' });
+  const result = spawnSync('git', ['commit', '-m', `kch: auto-commit ${workerName} before merge`], { cwd: worktreePath, encoding: 'utf-8' });
   return result.status === 0;
 }
 
@@ -291,7 +291,7 @@ export function mergeWorktreeChanges(
     }
     // Stage and commit the cherry-picked changes
     spawnSync('git', ['add', '-A'], { cwd: repoRoot, encoding: 'utf-8' });
-    spawnSync('git', ['commit', '-m', `kt: cherry-pick ${workerName} (${sha.slice(0, 8)})`], { cwd: repoRoot, encoding: 'utf-8' });
+    spawnSync('git', ['commit', '-m', `kch: cherry-pick ${workerName} (${sha.slice(0, 8)})`], { cwd: repoRoot, encoding: 'utf-8' });
   }
 
   return {

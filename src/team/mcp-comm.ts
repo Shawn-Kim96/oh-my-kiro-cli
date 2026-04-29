@@ -141,7 +141,7 @@ export async function deliverPendingMailboxMessages(
     const capture = capturePane(worker.paneId);
     if (!paneLooksReady(capture)) continue;
 
-    sendKeys(worker.paneId, `Check your mailbox: kt api mailbox-list --input '{"team_name":"${teamName}","worker":"${worker.name}"}' --json`);
+    sendKeys(worker.paneId, `Check your mailbox: kch api mailbox-list --input '{"team_name":"${teamName}","worker":"${worker.name}"}' --json`);
 
     for (const msg of unnotified) {
       await markMessageNotified(teamName, worker.name, msg.message_id);

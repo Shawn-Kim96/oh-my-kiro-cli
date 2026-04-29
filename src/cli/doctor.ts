@@ -1,4 +1,5 @@
 import { runCommand } from '../utils/platform-command.js';
+import { ktStateDir } from '../utils/paths.js';
 
 export async function runDoctor(): Promise<number> {
   let allOk = true;
@@ -21,13 +22,23 @@ export async function runDoctor(): Promise<number> {
     allOk = false;
   }
 
-  // Check kh in PATH
-  const kh = runCommand('which', ['kh']);
-  if (kh.ok) {
-    console.log(`  ✓ kh: ${kh.stdout}`);
+  const kch = runCommand('which', ['kch']);
+  if (kch.ok) {
+    console.log(`  ✓ kch: ${kch.stdout}`);
   } else {
-    console.log('  ○ kh: not in PATH (optional — run via node bin/kh.js)');
+    console.log('  ○ kch: not in PATH (optional — run via node bin/kch.js)');
   }
+
+  for (const alias of ['kh', 'kt']) {
+    const result = runCommand('which', [alias]);
+    if (result.ok) {
+      console.log(`  ✓ ${alias}: ${result.stdout} (compatibility alias)`);
+    } else {
+      console.log(`  ○ ${alias}: not in PATH (optional compatibility alias)`);
+    }
+  }
+
+  console.log(`  ✓ state root: ${ktStateDir()}`);
 
   // Check if inside tmux
   const inTmux = !!process.env['TMUX'];

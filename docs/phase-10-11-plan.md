@@ -1,7 +1,7 @@
 # Phase 10: Intelligence & Knowledge Layer (~18h)
 
 ## Goal
-Add advisory triage, deep-interview intake, and persistent wiki so kt makes smarter dispatch decisions and remembers across sessions.
+Add advisory triage, deep-interview intake, and persistent wiki so kch makes smarter dispatch decisions and remembers across sessions.
 
 ## Steps
 
@@ -30,7 +30,7 @@ Add advisory triage, deep-interview intake, and persistent wiki so kt makes smar
 **Fallback:** Make interview advisory-only (warn, don't block).
 
 ### 10.5 — Wiki Persistent Knowledge Store (4h)
-**What:** `WikiStore` class: `get(key)`, `set(key,value)`, `search(query)`, `listKeys()`. JSON files under `~/.kt/wiki/{namespace}/`. Namespaces: `team-{name}` (scoped), `global` (cross-session). Search = substring match on keys+values.
+**What:** `WikiStore` class: `get(key)`, `set(key,value)`, `search(query)`, `listKeys()`. JSON files under `~/.kch/wiki/{namespace}/`. Namespaces: `team-{name}` (scoped), `global` (cross-session). Search = substring match on keys+values.
 **Files:** `src/knowledge/wiki.ts`, `src/utils/paths.ts`  |  **Depends-on:** None
 **Acceptance:** `$ npm run build && npx tsx -e "import{WikiStore}from'./dist/knowledge/wiki.js';const w=new WikiStore('test');w.set('k',{v:1});console.log(w.get('k').v);w.cleanup()"` → 1
 **Fallback:** Add in-memory index if filesystem search is slow.
@@ -56,7 +56,7 @@ Add advisory triage, deep-interview intake, and persistent wiki so kt makes smar
 # Phase 11: Brazil Package & Platform (~19h)
 
 ## Goal
-Ship kt as a Brazil NpmPrettyMuch package with auto-checkpoint, cross-model routing, and wiki MCP tools.
+Ship kch as a Brazil NpmPrettyMuch package with auto-checkpoint, cross-model routing, and wiki MCP tools.
 
 ## Steps
 
@@ -79,7 +79,7 @@ Ship kt as a Brazil NpmPrettyMuch package with auto-checkpoint, cross-model rout
 **Fallback:** Add `--experimental-vm-modules` if ESM issues arise.
 
 ### 11.4 — Auto-Checkpoint on Phase Transitions (3h)
-**What:** `autoCheckpoint()` runs `git add -A && git commit -m "kt: {from}→{to}"` in leader cwd after transitions. Skips if no changes. Respects `--no-checkpoint`.
+**What:** `autoCheckpoint()` runs `git add -A && git commit -m "kch: {from}→{to}"` in leader cwd after transitions. Skips if no changes. Respects `--no-checkpoint`.
 **Files:** `src/team/checkpoint.ts`, `src/team/orchestrator.ts`  |  **Depends-on:** Phase 10
 **Acceptance:** `$ npm run build && npx tsx -e "import{autoCheckpoint}from'./dist/team/checkpoint.js';autoCheckpoint('/tmp/no-repo','a','b','r').then(r=>console.log(r.skipped?'SKIP':'OK'))"` → SKIP
 **Fallback:** Make checkpoint async fire-and-forget.
@@ -111,7 +111,7 @@ Brazil `Config` + build scripts, `checkpoint.ts`, cross-model routing, wiki MCP 
 # Phase 12: Competitive Edge (~12h) [OPTIONAL STRETCH]
 
 ## Goal
-Generalize state machine into reusable pipeline and surface kt's reliability moat.
+Generalize state machine into reusable pipeline and surface kch's reliability moat.
 
 ### 12.1 — Pipeline Abstraction (4h)
 Extract orchestrator into generic `Pipeline<TPhase>` with configurable transitions, hooks, max-retry.
@@ -124,7 +124,7 @@ Add heartbeat-miss count, lock contention, crash-resume count to HUD.
 **Acceptance:** `$ npm run build && grep -c 'heartbeat' dist/hud/render.js` → ≥1
 
 ### 12.3 — Verification Report Generator (4h)
-At team completion, write `~/.kt/reports/{team}-{ts}.json` with per-task fingerprint, status, worker, duration.
+At team completion, write `~/.kch/reports/{team}-{ts}.json` with per-task fingerprint, status, worker, duration.
 **Files:** `src/team/verification-report.ts`  |  **Depends-on:** None
 **Acceptance:** `$ npm run build && npx tsx -e "import{generateReport}from'./dist/team/verification-report.js';console.log(generateReport('t',[{id:'1',status:'completed',owner:'w-0',duration:30}]).tasks.length)"` → 1
 

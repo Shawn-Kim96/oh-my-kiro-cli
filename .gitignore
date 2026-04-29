@@ -2,3 +2,7 @@ node_modules
 dist
 /build
 *.tgz
+.omx/logs/
+.omx/state/
+.omx/metrics.json
+.omx/tmux-hook.json

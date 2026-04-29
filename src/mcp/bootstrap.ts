@@ -23,6 +23,6 @@ export async function autoStartStdioMcpServer(name: string, createServer: () => 
   try {
     await server.connect(transport);
   } catch (error) {
-    console.error(`[kt-${name}-server] failed to start:`, error);
+    console.error(`[kch-${name}-server] failed to start:`, error);
   }
 }

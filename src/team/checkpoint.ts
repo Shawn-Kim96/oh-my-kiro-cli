@@ -11,7 +11,12 @@ export async function autoCheckpoint(
   fromPhase: string,
   toPhase: string,
   teamName: string,
+  options?: { enabled?: boolean },
 ): Promise<CheckpointResult> {
+  if (!options?.enabled) {
+    return { skipped: true, reason: 'checkpointing disabled' };
+  }
+
   try {
     // Check if cwd is a git repo
     execFileSync('git', ['rev-parse', '--git-dir'], { cwd, stdio: 'pipe' });
@@ -28,7 +33,7 @@ export async function autoCheckpoint(
 
     // Stage and commit
     execFileSync('git', ['add', '-A'], { cwd, stdio: 'pipe' });
-    const msg = `kh(${teamName}): auto-checkpoint ${fromPhase}\u2192${toPhase}`;
+    const msg = `kch(${teamName}): auto-checkpoint ${fromPhase}\u2192${toPhase}`;
     execFileSync('git', ['commit', '-m', msg], { cwd, stdio: 'pipe' });
     const hash = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd, encoding: 'utf-8' }).trim();
     return { skipped: false, reason: 'committed', commitHash: hash };

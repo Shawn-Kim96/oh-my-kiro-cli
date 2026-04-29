@@ -75,6 +75,9 @@ export interface TaskState {
   role: string | null;
   result: string | null;
   error: string | null;
+  quality_checked?: boolean;
+  quality_passed?: boolean;
+  quality_issues?: string[];
   created_at: string;
   updated_at: string;
 }
@@ -118,6 +121,7 @@ export type EventType =
   | 'dispatch_failed' | 'dispatch_retried'
   | 'team_started' | 'team_shutdown'
   | 'phase_transition'
+  | 'quality_gate_passed' | 'quality_gate_failed'
   | 'leader_nudge'
   | 'shutdown_ack';
 

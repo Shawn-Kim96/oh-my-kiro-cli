@@ -45,7 +45,7 @@ export interface BuildFollowupStaffingPlanOptions {
 export async function resolveAvailableAgentTypes(projectRoot: string): Promise<string[]> {
   const dirs = [
     join(projectRoot, 'prompts'),
-    join(projectRoot, '.kt', 'prompts'),
+    join(projectRoot, '.kch', 'prompts'),
   ];
   const roles = new Set<string>();
   for (const dir of dirs) {
@@ -101,12 +101,12 @@ function buildLaunchHints(mode: FollowupMode, task: string, headcount: number, f
   const quoted = JSON.stringify(task);
   if (mode === 'team') {
     return {
-      shellCommand: `kt team ${headcount}:${fallbackRole} ${quoted}`,
+      shellCommand: `kch team ${headcount}:${fallbackRole} ${quoted}`,
       rationale: 'Launch team with parallel workers for delivery and verification.',
     };
   }
   return {
-    shellCommand: `kt team 1:verifier ${quoted}`,
+    shellCommand: `kch team 1:verifier ${quoted}`,
     rationale: 'Launch single verifier for focused evidence collection.',
   };
 }
@@ -117,7 +117,7 @@ function buildVerificationPlan(mode: FollowupMode, allocations: readonly Followu
     return {
       summary: 'Team workers deliver in parallel, then verification lane closes with evidence and regression checks.',
       checkpoints: [
-        `Launch via \`kt team ...\` so workers stay coordinated.`,
+        `Launch via \`kch team ...\` so workers stay coordinated.`,
         `Keep ${qualityLane?.role ?? 'the verification lane'} focused on tests and evidence capture.`,
         'Reserve final review for acceptance-criteria validation.',
       ],

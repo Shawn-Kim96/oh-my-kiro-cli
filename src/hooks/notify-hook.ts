@@ -11,7 +11,7 @@ export interface NotifyHookCallbacks {
 }
 
 export function notifyLeader(message: string): void {
-  displayMessage(`kt: ${message}`);
+  displayMessage(`kch: ${message}`);
 }
 
 export function startNotifyHook(

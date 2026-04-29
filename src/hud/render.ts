@@ -38,7 +38,7 @@ function workerSummary(w: { name: string; state: string; taskId: string | null }
 export function renderHud(state: HudState): string {
   const { teamName, phase, tasks, dispatch, mailbox, elapsed, workers } = state;
 
-  const header = ` [kt] ${bold(teamName)} │ phase: ${cyan(phase)} │ tasks: ${tasks.completed}/${tasks.total} done │ ⏱ ${formatElapsed(elapsed)} `;
+  const header = ` [kch] ${bold(teamName)} │ phase: ${cyan(phase)} │ tasks: ${tasks.completed}/${tasks.total} done │ ⏱ ${formatElapsed(elapsed)} `;
   const workerLine = ` ${workers.map(workerSummary).join(' │ ')} `;
   const statsLine = ` dispatch: ${dispatch.ok} ok, ${dispatch.failed} failed │ mailbox: ${mailbox.pending} pending `;
 

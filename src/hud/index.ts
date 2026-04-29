@@ -3,7 +3,7 @@ import { splitPane, killPane, runTmux } from '../team/tmux-session.js';
 export const HUD_HEIGHT_LINES = 6;
 
 export function startHud(teamName: string, _stateRoot: string): string {
-  const cmd = `kt hud --watch --team ${teamName}`;
+  const cmd = `kch hud --watch --team ${teamName}`;
   const paneId = splitPane({
     direction: 'v',
     command: cmd,
@@ -18,7 +18,7 @@ export function stopHud(paneId: string): void {
 }
 
 export function registerResizeHook(teamName: string, hudPaneId: string, tmuxTarget: string): string {
-  const hookName = `kt-resize-${teamName}`;
+  const hookName = `kch-resize-${teamName}`;
   runTmux([
     'set-hook', '-t', tmuxTarget,
     'after-resize-pane',
