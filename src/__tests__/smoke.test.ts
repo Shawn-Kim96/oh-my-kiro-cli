@@ -47,6 +47,8 @@ describe('CLI integration', () => {
       'setup', 'cleanup', 'cancel', 'trace', 'explore', 'list', 'version',
       'state', 'notepad', 'project-memory', 'wiki', 'deep-interview',
       'research', 'autoresearch', 'deep-research', 'reasoning',
+      'session', 'agents', 'agents-init', 'deepinit', 'ask', 'exec',
+      'update', 'uninstall', 'sparkshell',
     ]) {
       const out = execFileSync('node', [kchBin, command, '--help'], { encoding: 'utf8' });
       assert.ok(out.includes('Usage:'), `${command} should print usage`);
@@ -515,6 +517,46 @@ describe('OMX parity CLI surfaces', () => {
     try {
       const reasoning = execKchJson(['reasoning', 'high', '--json'], stateRoot);
       assert.equal(reasoning.reasoningEffort, 'high');
+    } finally {
+      rmSync(stateRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('exposes session search as JSON', () => {
+    const out = execFileSync('node', [kchBin, 'session', 'list', '--json'], { encoding: 'utf8' });
+    const parsed = JSON.parse(out) as { sessions: unknown[] };
+    assert.ok(Array.isArray(parsed.sessions));
+  });
+
+  it('scaffolds agents and AGENTS.md guidance', () => {
+    const root = mkdtempSync(join(tmpdir(), 'kch-agents-init-'));
+    try {
+      const agents = execFileSync('node', [kchBin, 'agents', 'init', root], { encoding: 'utf8' });
+      const parsed = JSON.parse(agents) as { ok: boolean; agents: string[] };
+      assert.equal(parsed.ok, true);
+      assert.ok(parsed.agents.includes('kch-executor'));
+      assert.equal(existsSync(join(root, '.kiro', 'agents', 'kch-executor.json')), true);
+
+      const guidance = execFileSync('node', [kchBin, 'agents-init', root, '--force'], { encoding: 'utf8' });
+      assert.equal((JSON.parse(guidance) as { ok: boolean }).ok, true);
+      assert.equal(existsSync(join(root, 'AGENTS.md')), true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('supports ask dry-run, sparkshell, and uninstall previews', () => {
+    const ask = execFileSync('node', [kchBin, 'ask', 'kiro', 'hello', '--dry-run', '--json'], { encoding: 'utf8' });
+    assert.equal((JSON.parse(ask) as { provider: string }).provider, 'kiro');
+
+    const shell = execFileSync('node', [kchBin, 'sparkshell', 'echo', 'hello', '--json'], { encoding: 'utf8' });
+    assert.equal((JSON.parse(shell) as { stdout: string }).stdout.trim(), 'hello');
+
+    const stateRoot = mkdtempSync(join(tmpdir(), 'kch-uninstall-preview-'));
+    try {
+      const preview = execKchJson(['uninstall', '--json'], stateRoot);
+      assert.equal(preview.applied, false);
+      assert.ok(preview.targets.length > 0);
     } finally {
       rmSync(stateRoot, { recursive: true, force: true });
     }

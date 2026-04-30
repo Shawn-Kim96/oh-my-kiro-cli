@@ -17,6 +17,14 @@ import { wikiCommand } from './wiki.js';
 import { deepInterviewCommand } from './deep-interview.js';
 import { researchCommand } from './research.js';
 import { reasoningCommand } from './reasoning.js';
+import { sessionCommand } from './session.js';
+import { agentsCommand } from './agents.js';
+import { agentsInitCommand } from './agents-init.js';
+import { askCommand } from './ask.js';
+import { execCommand } from './exec.js';
+import { updateCommand } from './update.js';
+import { uninstallCommand } from './uninstall.js';
+import { sparkshellCommand } from './sparkshell.js';
 import { startTeam, startTeamDetached, resumeTeam } from '../team/runtime.js';
 import { scaleUp, scaleDown } from '../team/scaling.js';
 import { parseSpec } from '../config/agent-mapping.js';
@@ -79,6 +87,15 @@ program.addCommand(researchCommand('research'));
 program.addCommand(researchCommand('autoresearch'));
 program.addCommand(researchCommand('deep-research'));
 program.addCommand(reasoningCommand());
+program.addCommand(sessionCommand());
+program.addCommand(agentsCommand());
+program.addCommand(agentsInitCommand('agents-init'));
+program.addCommand(agentsInitCommand('deepinit'));
+program.addCommand(askCommand());
+program.addCommand(execCommand());
+program.addCommand(updateCommand());
+program.addCommand(uninstallCommand());
+program.addCommand(sparkshellCommand());
 
 program
   .command('setup')

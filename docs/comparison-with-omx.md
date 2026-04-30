@@ -79,7 +79,7 @@ kiro-cli-hive (kch) is directly inspired by [oh-my-codex](https://github.com/Yea
 - Dynamic scaling (scale-up/scale-down)
 - Resume after leader disconnect
 - Doctor command for environment checks
-- CLI parity surfaces for `list`, `version`, `state`, `notepad`, `project-memory`, `wiki`, `deep-interview`, `reasoning`, and research planning aliases
+- CLI parity surfaces for `list`, `version`, `state`, `notepad`, `project-memory`, `wiki`, `deep-interview`, `reasoning`, `session`, `agents`, `agents-init`/`deepinit`, `ask`, `exec`, `sparkshell`, `update`, `uninstall`, and research planning aliases
 - The overall philosophy: wrap the CLI, don't replace it
 
 ## What kch Does Differently

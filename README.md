@@ -237,6 +237,15 @@ kch research "Compare kch and omx runtime gaps" --workers 3
 kch autoresearch "Investigate worker lifecycle risks" --workers 3
 kch deep-research "Map missing OMX parity features" --workers 4
 kch reasoning high
+kch session search "worker-0"
+kch agents list
+kch agents init .
+kch agents-init .
+kch ask kiro "Summarize current runtime risks" --dry-run
+kch exec --agent kiro_default "Summarize this repository"
+kch sparkshell pwd
+kch update
+kch uninstall --json
 ```
 
 `research`, `autoresearch`, and `deep-research` print a research plan by default. Add `--execute` to launch a detached `kch team`.
