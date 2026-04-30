@@ -3,6 +3,7 @@ import { execFile } from 'child_process';
 import { ktStateDir } from '../utils/paths.js';
 import { sleep } from '../utils/sleep.js';
 import { resolveKiroCliCommand, shellEnvAssignment, shellQuote } from '../utils/kiro-cli.js';
+import { resolveModelConfig, resolveWorkerModelFlags } from '../config/models.js';
 
 // ── Result types ──
 
@@ -243,7 +244,16 @@ export function spawnWorkerPane(options: SpawnWorkerOptions): string {
       envParts.push(shellEnvAssignment(k, v));
     }
   }
-  const cmd = `${envParts.join(' ')} ${shellQuote(resolveKiroCliCommand())} chat --trust-all-tools --agent ${shellQuote(options.agent)}`;
+  const modelFlags = resolveWorkerModelFlags(options.agent, resolveModelConfig()).map(shellQuote);
+  const launchParts = [
+    shellQuote(resolveKiroCliCommand()),
+    'chat',
+    '--trust-all-tools',
+    ...modelFlags,
+    '--agent',
+    shellQuote(options.agent),
+  ];
+  const cmd = `${envParts.join(' ')} ${launchParts.join(' ')}`;
   return splitPane({
     direction: options.direction,
     command: cmd,

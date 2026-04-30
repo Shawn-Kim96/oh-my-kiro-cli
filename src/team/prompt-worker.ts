@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { resolveKiroCliCommand } from '../utils/kiro-cli.js';
+import { resolveModelConfig, resolveWorkerModelFlags } from '../config/models.js';
 
 export interface PromptWorker {
   id: string;
@@ -46,7 +47,8 @@ export async function sendPromptWorkerMessage(
 ): Promise<string> {
   // --no-interactive is single-turn: spawn a new process per message
   return new Promise<string>((resolve, reject) => {
-    const child = spawn(resolveKiroCliCommand(), ['chat', '--no-interactive', '--trust-all-tools', '--agent', options.agent], {
+    const modelFlags = resolveWorkerModelFlags(options.agent, resolveModelConfig());
+    const child = spawn(resolveKiroCliCommand(), ['chat', '--no-interactive', '--trust-all-tools', ...modelFlags, '--agent', options.agent], {
       cwd: options.cwd,
       env: { ...process.env, ...options.env },
       stdio: ['pipe', 'pipe', 'pipe'],

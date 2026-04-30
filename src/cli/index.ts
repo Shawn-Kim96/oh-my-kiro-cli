@@ -8,6 +8,15 @@ import { runSetup } from './setup.js';
 import { runCleanup } from './cleanup.js';
 import { traceCommand } from './trace.js';
 import { exploreCommand } from './explore.js';
+import { listCommand } from './list.js';
+import { versionCommand } from './version.js';
+import { stateCommand } from './state.js';
+import { notepadCommand } from './notepad.js';
+import { projectMemoryCommand } from './project-memory.js';
+import { wikiCommand } from './wiki.js';
+import { deepInterviewCommand } from './deep-interview.js';
+import { researchCommand } from './research.js';
+import { reasoningCommand } from './reasoning.js';
 import { startTeam, startTeamDetached, resumeTeam } from '../team/runtime.js';
 import { scaleUp, scaleDown } from '../team/scaling.js';
 import { parseSpec } from '../config/agent-mapping.js';
@@ -59,6 +68,17 @@ program.addCommand(cancelCommand());
 program.addCommand(apiCommand);
 program.addCommand(traceCommand());
 program.addCommand(exploreCommand());
+program.addCommand(listCommand());
+program.addCommand(versionCommand());
+program.addCommand(stateCommand());
+program.addCommand(notepadCommand());
+program.addCommand(projectMemoryCommand());
+program.addCommand(wikiCommand());
+program.addCommand(deepInterviewCommand());
+program.addCommand(researchCommand('research'));
+program.addCommand(researchCommand('autoresearch'));
+program.addCommand(researchCommand('deep-research'));
+program.addCommand(reasoningCommand());
 
 program
   .command('setup')

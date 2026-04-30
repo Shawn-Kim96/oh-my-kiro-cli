@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -43,7 +43,11 @@ describe('CLI integration', () => {
   });
 
   it('kch operator commands expose help', () => {
-    for (const command of ['setup', 'cleanup', 'cancel', 'trace', 'explore']) {
+    for (const command of [
+      'setup', 'cleanup', 'cancel', 'trace', 'explore', 'list', 'version',
+      'state', 'notepad', 'project-memory', 'wiki', 'deep-interview',
+      'research', 'autoresearch', 'deep-research', 'reasoning',
+    ]) {
       const out = execFileSync('node', [kchBin, command, '--help'], { encoding: 'utf8' });
       assert.ok(out.includes('Usage:'), `${command} should print usage`);
     }
@@ -277,6 +281,7 @@ import { generateWorkerInbox } from '../team/worker-bootstrap.js';
 import { latestTeamName } from '../cli/team-select.js';
 import { findCleanupCandidates } from '../cli/cleanup.js';
 import { paneLooksReady } from '../team/tmux-session.js';
+import { resolveModelConfig, writeStoredModelConfig } from '../config/models.js';
 
 // ── Quality Gate ──
 
@@ -430,6 +435,123 @@ describe('Kiro pane readiness', () => {
       'ask a question or describe a task ↵',
     ].join('\n');
     assert.equal(paneLooksReady(capture), true);
+  });
+});
+
+function execKchJson(args: string[], stateRoot: string): any {
+  const out = execFileSync('node', [kchBin, ...args], {
+    encoding: 'utf8',
+    env: { ...process.env, KCH_STATE_ROOT: stateRoot },
+  });
+  return JSON.parse(out) as unknown;
+}
+
+describe('OMX parity CLI surfaces', () => {
+  it('lists packaged skills and prompts', () => {
+    const out = execFileSync('node', [kchBin, 'list', '--json'], { encoding: 'utf8' });
+    const parsed = JSON.parse(out) as { skills: Array<{ name: string }>; prompts: string[] };
+    assert.ok(parsed.skills.some(skill => skill.name === 'team'));
+    assert.ok(parsed.skills.some(skill => skill.name === 'deep-interview'));
+    assert.ok(parsed.prompts.includes('executor'));
+  });
+
+  it('prints version metadata as JSON', () => {
+    const out = execFileSync('node', [kchBin, 'version', '--json'], { encoding: 'utf8' });
+    const parsed = JSON.parse(out) as { kch: string; kiro_cli_command: string };
+    assert.equal(parsed.kch, '0.1.0');
+    assert.ok(parsed.kiro_cli_command.length > 0);
+  });
+
+  it('reads and writes mode state', () => {
+    const stateRoot = mkdtempSync(join(tmpdir(), 'kch-cli-state-'));
+    try {
+      const write = execKchJson(['state', 'write', 'research', '{"active":true,"topic":"parity"}'], stateRoot);
+      assert.equal(write.ok, true);
+      const read = execKchJson(['state', 'read', 'research', '--json'], stateRoot);
+      assert.equal(read.exists, true);
+      assert.equal(read.state.topic, 'parity');
+      const list = execKchJson(['state', 'list', '--json'], stateRoot);
+      assert.deepEqual(list.active_modes, ['research']);
+    } finally {
+      rmSync(stateRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('reads and writes notepad, project memory, and wiki', () => {
+    const stateRoot = mkdtempSync(join(tmpdir(), 'kch-cli-memory-'));
+    try {
+      execKchJson(['notepad', 'write', 'manual', 'remember', 'this'], stateRoot);
+      const notepad = execKchJson(['notepad', 'read', 'manual', '--json'], stateRoot);
+      assert.ok(notepad.entries.includes('remember this'));
+
+      execKchJson(['project-memory', 'note', 'architecture', 'file IPC'], stateRoot);
+      const notes = execKchJson(['project-memory', 'read', 'notes', '--json'], stateRoot);
+      assert.equal(notes.architecture[0].content, 'file IPC');
+
+      execKchJson(['wiki', 'set', 'global', 'dispatch', '{"status":"verified"}'], stateRoot);
+      const wiki = execKchJson(['wiki', 'get', 'global', 'dispatch'], stateRoot);
+      assert.equal(wiki.value.status, 'verified');
+      const search = execKchJson(['wiki', 'search', 'global', 'verified'], stateRoot);
+      assert.equal(search.results.length, 1);
+    } finally {
+      rmSync(stateRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('provides deep interview and research planning surfaces', () => {
+    const interviewOut = execFileSync('node', [kchBin, 'deep-interview', 'Improve the codebase', '--json'], { encoding: 'utf8' });
+    const interview = JSON.parse(interviewOut) as { blocked: boolean; interview: { ambiguities: string[] } };
+    assert.equal(interview.blocked, true);
+    assert.ok(interview.interview.ambiguities.length > 0);
+
+    const researchOut = execFileSync('node', [kchBin, 'deep-research', 'Compare kch and omx', '--workers', '2', '--json'], { encoding: 'utf8' });
+    const research = JSON.parse(researchOut) as { execute: boolean; plan: { tasks: string[] } };
+    assert.equal(research.execute, false);
+    assert.equal(research.plan.tasks.length, 2);
+  });
+
+  it('stores reasoning metadata in kch config', () => {
+    const stateRoot = mkdtempSync(join(tmpdir(), 'kch-cli-reasoning-'));
+    try {
+      const reasoning = execKchJson(['reasoning', 'high', '--json'], stateRoot);
+      assert.equal(reasoning.reasoningEffort, 'high');
+    } finally {
+      rmSync(stateRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('model config resolution', () => {
+  const original = {
+    KCH_STATE_ROOT: process.env['KCH_STATE_ROOT'],
+    KCH_DEFAULT_MODEL: process.env['KCH_DEFAULT_MODEL'],
+    KCH_WORKER_MODEL: process.env['KCH_WORKER_MODEL'],
+    KCH_REASONING_EFFORT: process.env['KCH_REASONING_EFFORT'],
+  };
+
+  function restoreEnv(): void {
+    for (const key of Object.keys(original) as Array<keyof typeof original>) {
+      const value = original[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+
+  it('uses stored config and lets env override it', () => {
+    const stateRoot = mkdtempSync(join(tmpdir(), 'kch-model-config-'));
+    process.env['KCH_STATE_ROOT'] = stateRoot;
+    delete process.env['KCH_DEFAULT_MODEL'];
+    delete process.env['KCH_WORKER_MODEL'];
+    delete process.env['KCH_REASONING_EFFORT'];
+    try {
+      writeStoredModelConfig({ default_model: 'auto', worker_model: 'claude-haiku-4.5', reasoning_effort: 'medium' });
+      assert.equal(resolveModelConfig().workerModel, 'claude-haiku-4.5');
+      process.env['KCH_WORKER_MODEL'] = 'qwen3-coder-next';
+      assert.equal(resolveModelConfig().workerModel, 'qwen3-coder-next');
+    } finally {
+      restoreEnv();
+      rmSync(stateRoot, { recursive: true, force: true });
+    }
   });
 });
 

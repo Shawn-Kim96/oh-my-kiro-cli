@@ -221,6 +221,26 @@ kch hud --team my-team-123456 --watch
 kch hud --team my-team-123456 --watch --interval 1000
 ```
 
+### OMX-Parity Utility Commands
+
+These commands mirror OMX's operator surfaces where they map cleanly to Kiro/tmux execution:
+
+```bash
+kch list --json
+kch version --json
+kch state list --json
+kch notepad write working "Verified dispatch retry behavior"
+kch project-memory note architecture "Workers coordinate through file IPC"
+kch wiki set global dispatch '{"status":"verified"}'
+kch deep-interview "Improve the runtime" --json
+kch research "Compare kch and omx runtime gaps" --workers 3
+kch autoresearch "Investigate worker lifecycle risks" --workers 3
+kch deep-research "Map missing OMX parity features" --workers 4
+kch reasoning high
+```
+
+`research`, `autoresearch`, and `deep-research` print a research plan by default. Add `--execute` to launch a detached `kch team`.
+
 ### `kch doctor`
 
 Check that all prerequisites are installed and accessible.
@@ -236,9 +256,9 @@ Check that all prerequisites are installed and accessible.
 | `KCH_AGENT_PROFILE` | Agent mapping profile: `internal` for Amazon yolo agents, `public` for stock Kiro agents | `internal` |
 | `KCH_DEFAULT_AGENT` | Fallback agent when a role does not have a profile mapping | profile default |
 | `KCH_AGENT_<ROLE>` | Override one role mapping, e.g. `KCH_AGENT_EXECUTOR=kiro_default` | profile mapping |
-| `KT_DEFAULT_MODEL` | Default model for all workers | kiro-cli default |
-| `KT_WORKER_MODEL` | Override model specifically for workers | `KT_DEFAULT_MODEL` |
-| `KT_REASONING_EFFORT` | Reasoning effort: `low`, `medium`, `high` | kiro-cli default |
+| `KCH_DEFAULT_MODEL` / `KT_DEFAULT_MODEL` | Default model for all workers | kiro-cli default |
+| `KCH_WORKER_MODEL` / `KT_WORKER_MODEL` | Override model specifically for workers | default model |
+| `KCH_REASONING_EFFORT` / `KT_REASONING_EFFORT` | Reasoning metadata: `low`, `medium`, `high` | kiro-cli default |
 | `KCH_STATE_ROOT` | Override state directory | `~/.kch` |
 | `KT_TEAM` | (set automatically) Team name for worker processes | — |
 | `KT_WORKER` | (set automatically) Worker name for worker processes | — |
